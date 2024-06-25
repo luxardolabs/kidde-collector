@@ -1,10 +1,11 @@
 
 
+
 ## About The Project
 
-<center><img src="https://labs.lux4rd0.com/wp-content/uploads/2021/07/kidde_collector_header.png"></center>
+![enter image description here](https://labs.lux4rd0.com/wp-content/uploads/2024/06/kidde_collector-by_device.jpg)
 
-**Kidde Collector** is a Python application deployed with Docker designed to efficiently collect data from the Kidde HomeSafe system. Once deployed, Kidde Collector provides a comprehensive set of Grafana dashboards, enabling you to visualize and effortlessly analyze your Kidde HomeSafe data in real-time. Whether starting with Grafana, InfluxDB, and Kidde HomeSafe or looking to enhance your existing setup, Kidde Collector offers an intuitive and powerful solution for monitoring and understanding your Kidde HomeSafe data.
+**Kidde Collector** is a Python application deployed with Docker designed to efficiently collect data from the Kidde HomeSafe system. Once deployed, Kidde Collector provides a comprehensive set of Grafana dashboards, enabling you to visualize and effortlessly analyze your Kidde HomeSafe data in real time. Whether starting with Grafana, InfluxDB, and Kidde HomeSafe or looking to enhance your existing setup, Kidde Collector offers an intuitive and powerful solution for monitoring and understanding your Kidde HomeSafe data.
 
 ## Getting Started
 
