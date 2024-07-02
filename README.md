@@ -5,7 +5,7 @@
 
 ![enter image description here](https://labs.lux4rd0.com/wp-content/uploads/2024/06/kidde_collector-by_device.jpg)
 
-**Kidde Collector** is a Python application deployed with Docker designed to efficiently collect data from the Kidde HomeSafe system. Once deployed, Kidde Collector provides a comprehensive set of Grafana dashboards, enabling you to visualize and effortlessly analyze your Kidde HomeSafe data in real time. Whether starting with Grafana, InfluxDB, and Kidde HomeSafe or looking to enhance your existing setup, Kidde Collector offers an intuitive and powerful solution for monitoring and understanding your Kidde HomeSafe data.
+**Kidde Collector** is a Python application deployed with Docker designed to collect data from the Kidde HomeSafe system efficiently. Once deployed, Kidde Collector provides a comprehensive set of Grafana dashboards, enabling you to visualize and effortlessly analyze your Kidde HomeSafe data in real-time. Whether starting with Grafana, InfluxDB, and Kidde HomeSafe or looking to enhance your existing setup, Kidde Collector offers an intuitive and powerful solution for monitoring and understanding your Kidde HomeSafe data.
 
 ## Getting Started
 
@@ -120,6 +120,25 @@ The Docker container can be configured with additional environment flags to cont
 - **Required**: No
 - **Default**: false
 - **Options**: true, false
+
+## Grafana Datasource
+
+This collector uses InfluxQL, and for the dashboards to function, you need to create a data source in Grafana using the credentials you set in InfluxDB V2. More details can be found on the InfluxDB V2 Web site:
+
+https://docs.influxdata.com/influxdb/v2/tools/grafana/?t=InfluxQL#configure-your-influxdb-connection
+
+The biggest change here is:
+
+ - Configure InfluxDB authentication:
+   
+   **Token authentication**
+   Under **Custom HTTP Headers**, select **Add Header**. Provide your InfluxDB API token:
+   
+   **Header**: Enter `Authorization`
+   
+   **Value**: Use the `Token` schema and provide your InfluxDB API token. For example:
+   
+       Token y0uR5uP3rSecr3tT0k3n
 
 ## Contact
 
