@@ -1,11 +1,8 @@
-
-
-
 ## About The Project
 
 ![enter image description here](https://labs.lux4rd0.com/wp-content/uploads/2024/06/kidde_collector-by_device.jpg)
 
-**Kidde Collector** is a Python application deployed with Docker designed to efficiently collect data from the Kidde HomeSafe system. Once deployed, Kidde Collector provides a comprehensive set of Grafana dashboards, enabling you to visualize and effortlessly analyze your Kidde HomeSafe data in real-time. Whether starting with Grafana, InfluxDB, and Kidde HomeSafe or looking to enhance your existing setup, Kidde Collector offers an intuitive and powerful solution for monitoring and understanding your Kidde HomeSafe data.
+**Kidde Collector** is a Python application deployed with Docker designed to collect data from the Kidde HomeSafe system efficiently. Once deployed, Kidde Collector provides a comprehensive set of Grafana dashboards, enabling you to visualize and effortlessly analyze your Kidde HomeSafe data in real time. Whether starting with Grafana, InfluxDB, and Kidde HomeSafe or looking to enhance your existing setup, Kidde Collector offers an intuitive and powerful solution for monitoring and understanding your Kidde HomeSafe data.
 
 ## Getting Started
 
@@ -35,7 +32,7 @@ Correct environmental variables are required for the container to function.
 
 An example command line would be (be sure to change all of the variables):
 
-To start the docker container, simply update this minimal example `docker-compose.yml` file:
+To start the docker container, update this minimal example `docker-compose.yml` file:
 
     name: kidde-collector
     services:
@@ -68,58 +65,34 @@ Running `docker compose up -d` or the `docker run` command will download and sta
 
 ## Environmental Flags:
 
-The Docker container can be configured with additional environment flags to control collector behaviors. They are described below:
+The Docker container can be configured with the following environment variables to control collector behaviors:
 
-### KIDDE_COLLECTOR_API_DATA_FOLDER
-- **Description**: The directory where API data will be stored.
-- **Required**: No
-- **Default**: export
+| **Variable**                          | **Description**                                                            | **Required** | **Default**       |
+|---------------------------------------|----------------------------------------------------------------------------|--------------|-------------------|
+| `KIDDE_COLLECTOR_INFLUXDB_BUCKET`     | The bucket name in InfluxDB where data will be stored.                      | Yes          |                   |
+| `KIDDE_COLLECTOR_INFLUXDB_ORG`        | The organization name in InfluxDB.                                          | Yes          |                   |
+| `KIDDE_COLLECTOR_INFLUXDB_TOKEN`      | The authentication token for InfluxDB.                                      | Yes          |                   |
+| `KIDDE_COLLECTOR_INFLUXDB_URL`        | The URL of the InfluxDB instance where data will be written.                | Yes          |                   |
+| `KIDDE_COLLECTOR_KIDDE_PASSWORD`      | The password for authenticating with the Kidde API.                         | Yes          |                   |
+| `KIDDE_COLLECTOR_KIDDE_USERNAME`      | The username (email address) for authenticating with the Kidde API.         | Yes          |                   |
+| `KIDDE_COLLECTOR_API_DATA_FOLDER`     | The directory where API data will be stored.                                | No           | `export`          |
+| `KIDDE_COLLECTOR_COOKIES_DIR`         | The directory where cookie files will be stored.                            | No           | `cookies`         |
+| `KIDDE_COLLECTOR_FETCH_INTERVAL_SECONDS`| The interval in seconds between data fetches.                               | No           | `60`              |
+| `KIDDE_COLLECTOR_LOG_LEVEL`           | Sets the general logging level for the application.                         | No           | `INFO`            |
+| `KIDDE_COLLECTOR_WRITE_API_DATA`      | Enables or disables the output of received Kidde API data to a file.        | No           | `false`           |
+| `KIDDE_COLLECTOR_REQUEST_TIMEOUT`     | The total timeout in seconds for any API request to Kidde HomeSafe.         | No           | `10 seconds`      |
+| `KIDDE_COLLECTOR_CONNECTION_TIMEOUT`  | The connection timeout in seconds when attempting to connect to the API.    | No           | `5 seconds`       |
 
-### KIDDE_COLLECTOR_COOKIES_DIR
-- **Description**: The directory where cookie files will be stored.
-- **Required**: No
-- **Default**: cookies
+### Logging Levels:
+- **Options** for `KIDDE_COLLECTOR_LOG_LEVEL`: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
 
-### KIDDE_COLLECTOR_FETCH_INTERVAL_SECONDS
-- **Description**: The interval in seconds between data fetches.
-- **Required**: No
-- **Default**: 60
+### Options for Writing API Data:
+- **Options** for `KIDDE_COLLECTOR_WRITE_API_DATA`: `true`, `false`
 
-### KIDDE_COLLECTOR_INFLUXDB_BUCKET
-- **Description**: The bucket name in InfluxDB where data will be stored.
-- **Required**: Yes
+---
 
-### KIDDE_COLLECTOR_INFLUXDB_ORG
-- **Description**: The organization name in InfluxDB.
-- **Required**: Yes
+This format provides a cleaner and more structured overview of the environment variables, making it easier to understand their purpose, requirements, and default values.
 
-### KIDDE_COLLECTOR_INFLUXDB_TOKEN
-- **Description**: The authentication token for InfluxDB.
-- **Required**: Yes
-
-### KIDDE_COLLECTOR_INFLUXDB_URL
-- **Description**: The URL of the InfluxDB instance where data will be written.
-- **Required**: Yes
-
-### KIDDE_COLLECTOR_KIDDE_PASSWORD
-- **Description**: The password for authenticating with the Kidde API.
-- **Required**: Yes
-
-### KIDDE_COLLECTOR_KIDDE_USERNAME
-- **Description**: The username (email address) for authenticating with the Kidde API.
-- **Required**: Yes
-
-### KIDDE_COLLECTOR_LOG_LEVEL
-- **Description**: Sets the general logging level for the application.
-- **Required**: No
-- **Default**: INFO
-- **Options**: DEBUG, INFO, WARNING, ERROR, CRITICAL
-
-### KIDDE_COLLECTOR_WRITE_API_DATA
-- **Description**: Enables or disables the output of received Kidde API data to a file.
-- **Required**: No
-- **Default**: false
-- **Options**: true, false
 
 ## Grafana Datasource
 
