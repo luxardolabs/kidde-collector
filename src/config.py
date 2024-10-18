@@ -25,3 +25,7 @@ LOG_LEVEL = os.getenv("KIDDE_COLLECTOR_LOG_LEVEL", "INFO").upper()
 
 # Flag to write API data
 WRITE_API_DATA = os.getenv("KIDDE_COLLECTOR_WRITE_API_DATA", "true").lower() == "true"
+
+# Timeout settings (in seconds)
+REQUEST_TIMEOUT = int(os.getenv("KIDDE_COLLECTOR_REQUEST_TIMEOUT", "10"))
+CONNECTION_TIMEOUT = int(os.getenv("KIDDE_COLLECTOR_CONNECTION_TIMEOUT", "5"))
