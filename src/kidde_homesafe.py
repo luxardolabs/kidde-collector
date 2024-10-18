@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import Optional, Any, Literal
 
 import aiohttp
+import config
 
 
 _API_PREFIX = "https://api.homesafe.kidde.com/api/v4"
@@ -66,7 +67,12 @@ class KiddeClient:
         """Create a client from a login."""
         url = f"{_API_PREFIX}/auth/login"
         payload = {"email": email, "password": password}
-        async with aiohttp.request("POST", url, json=payload) as response:
+        timeout = aiohttp.ClientTimeout(
+            total=config.REQUEST_TIMEOUT, connect=config.CONNECTION_TIMEOUT
+        )
+        async with aiohttp.request(
+            "POST", url, json=payload, timeout=timeout
+        ) as response:
             if response.status == 403:
                 raise KiddeClientAuthError
             response.raise_for_status()
@@ -89,7 +95,12 @@ class KiddeClient:
             Response JSON data.
         """
         url = f"{_API_PREFIX}/{path}"
-        async with aiohttp.request(method, url, cookies=self.cookies) as response:
+        timeout = aiohttp.ClientTimeout(
+            total=config.REQUEST_TIMEOUT, connect=config.CONNECTION_TIMEOUT
+        )  # Add timeouts here
+        async with aiohttp.request(
+            method, url, cookies=self.cookies, timeout=timeout
+        ) as response:
             if response.status == 403:
                 raise KiddeClientAuthError
             response.raise_for_status()
