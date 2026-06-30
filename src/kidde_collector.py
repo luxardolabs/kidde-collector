@@ -66,20 +66,32 @@ class KiddeCollector:
     def create_directories_and_files(self):
         folder_path = Path(config.API_DATA_FOLDER)
         cookies_dir_path = config.COOKIES_DIR
+        health_dir_path = config.HEALTH_FILE.parent
 
         try:
             folder_path.mkdir(parents=True, exist_ok=True)
             cookies_dir_path.mkdir(parents=True, exist_ok=True)
-            logger.debug(f"Directories created: {folder_path}, {cookies_dir_path}")
+            health_dir_path.mkdir(parents=True, exist_ok=True)
+            logger.debug(f"Directories created: {folder_path}, {cookies_dir_path}, {health_dir_path}")
         except Exception as e:
             logger.error(f"Error creating directories: {e}")
             raise RuntimeError(f"Error creating directories: {e}")
+
+    def record_successful_cycle(self):
+        try:
+            config.HEALTH_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(config.HEALTH_FILE, "w", encoding="utf-8") as health_file:
+                health_file.write(datetime.datetime.utcnow().isoformat() + "Z")
+            logger.debug(f"Updated health timestamp: {config.HEALTH_FILE}")
+        except Exception as e:
+            logger.error(f"Failed to update health timestamp: {e}")
 
     async def main_loop(self):
         while True:
             start_time = time.time()
             logger.info("Starting processing cycle")
 
+            client = None
             try:
                 client = await self.kidde_api.get_kidde_client()
                 if client is None:
@@ -102,11 +114,15 @@ class KiddeCollector:
                     await self.mqtt_writer.write_data_to_mqtt(data)
                 if self.influxdb_writer is not None:
                     await self.influxdb_writer.write_data_to_influxdb(data)
+                self.record_successful_cycle()
                 logger.info(f"Processed {len(data.devices)} devices")
 
             except Exception as e:
                 logger.error(f"An error occurred: {e}")
                 logger.debug(traceback.format_exc())
+            finally:
+                if client is not None:
+                    await client.close()
 
             end_time = time.time()
             elapsed_time = end_time - start_time

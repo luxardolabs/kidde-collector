@@ -13,5 +13,8 @@ COPY requirements.txt ./src/config.py ./src/influxdb_writer.py ./src/mqtt_writer
 RUN pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD /bin/sh -c 'test -f health/last_successful_cycle && [ $(($(date +%s) - $(stat -c %Y health/last_successful_cycle))) -lt 240 ]'
+
 # Run main.py when the container launches
 CMD ["python3", "./kidde_collector.py"]

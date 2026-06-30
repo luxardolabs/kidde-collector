@@ -13,4 +13,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    healthcheck:
+      test: ["CMD-SHELL", "test -f health/last_successful_cycle && [ $(($(date +%s) - $(stat -c %Y health/last_successful_cycle))) -lt 240 ]"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     restart: always

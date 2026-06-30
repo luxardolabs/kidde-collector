@@ -61,6 +61,15 @@ class KiddeClient:
     def __init__(self, cookies: dict[str, str]) -> None:
         """Initialize client."""
         self.cookies = cookies
+        self.session = aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(ttl_dns_cache=60),
+            trust_env=True,
+        )
+
+    async def close(self) -> None:
+        """Close the underlying HTTP session."""
+        if not self.session.closed:
+            await self.session.close()
 
     @classmethod
     async def from_login(cls, email: str, password: str) -> "KiddeClient":
@@ -70,14 +79,16 @@ class KiddeClient:
         timeout = aiohttp.ClientTimeout(
             total=config.REQUEST_TIMEOUT, connect=config.CONNECTION_TIMEOUT
         )
-        async with aiohttp.request(
-            "POST", url, json=payload, timeout=timeout
-        ) as response:
-            if response.status == 403:
-                raise KiddeClientAuthError
-            response.raise_for_status()
-            cookies = {c.key: c.value for c in response.cookies.values()}
-            return cls(cookies)
+        async with aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(ttl_dns_cache=60),
+            trust_env=True,
+        ) as session:
+            async with session.post(url, json=payload, timeout=timeout) as response:
+                if response.status == 403:
+                    raise KiddeClientAuthError
+                response.raise_for_status()
+                cookies = {c.key: c.value for c in response.cookies.values()}
+                return cls(cookies)
 
     async def _request(self, path: str, method: Literal["GET", "POST"] = "GET") -> Any:
         """Make a request.
@@ -98,7 +109,7 @@ class KiddeClient:
         timeout = aiohttp.ClientTimeout(
             total=config.REQUEST_TIMEOUT, connect=config.CONNECTION_TIMEOUT
         )  # Add timeouts here
-        async with aiohttp.request(
+        async with self.session.request(
             method, url, cookies=self.cookies, timeout=timeout
         ) as response:
             if response.status == 403:

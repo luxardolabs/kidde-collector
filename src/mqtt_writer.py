@@ -27,6 +27,9 @@ class MqttWriter:
             f"MQTT device created for device: {device['serial_number']}"
         )
         #TODO CERATE sensors for other device types
+        def _noop_command_callback(*args, **kwargs):
+            return None
+
         match device['model']:
             case 'waterleakdetector':
                 leak_sensor_info = BinarySensorInfo(name="LeakAlarm", device_class="moisture", unique_id="water_leak_sensor", device=device_info)
@@ -47,12 +50,12 @@ class MqttWriter:
 
                 temp_sensor_info =  NumberInfo(name="Temperature", mode="box", step=1, device_class="temperature", unique_id="temperature_sensor", device=device_info)
                 temp_settings = Settings(mqtt=mqtt_settings, entity=temp_sensor_info)
-                temp_sensor = Number(temp_settings, command_callback=None)
+                temp_sensor = Number(temp_settings, _noop_command_callback)
                 temp_sensor.set_value(device['temperature'])
 
                 last_seen_info =  TextInfo(name="Last Seen", unique_id="sensor_last_seen", device=device_info)
                 last_seen_settings = Settings(mqtt=mqtt_settings, entity=last_seen_info)
-                last_seen_sensor = Text(last_seen_settings, command_callback=None)
+                last_seen_sensor = Text(last_seen_settings, _noop_command_callback)
                 last_seen_sensor.set_text(device['last_seen'])
 
 

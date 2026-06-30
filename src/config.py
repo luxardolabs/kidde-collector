@@ -21,6 +21,10 @@ API_DATA_FOLDER = os.getenv("KIDDE_COLLECTOR_API_DATA_FOLDER", "export")
 # Interval in seconds
 FETCH_INTERVAL_SECONDS = int(os.getenv("KIDDE_COLLECTOR_FETCH_INTERVAL_SECONDS", "60"))
 
+# Healthcheck timestamp file path
+HEALTH_FILE = Path(os.getenv("KIDDE_COLLECTOR_HEALTH_FILE", "health/last_successful_cycle"))
+HEALTH_MAX_AGE_SECONDS = int(os.getenv("KIDDE_COLLECTOR_HEALTH_MAX_AGE_SECONDS", str(FETCH_INTERVAL_SECONDS * 2)))
+
 # Log level
 LOG_LEVEL = os.getenv("KIDDE_COLLECTOR_LOG_LEVEL", "INFO").upper()
 
