@@ -1,0 +1,34 @@
+# gitleaks accepted-findings ledger (grandfathered).
+#
+# These are all luxardolabs-org-denylist hits in the PRE-TRANSFER history (old README
+# versions + the old grafana/shared/ path) — the retired upstream identity, which was
+# public for years and is NOT a credential (verified: 0 secret-shape findings in history).
+# The repo was transferred (not re-created) to preserve the redirect + stars for its
+# multi-year user base, so this history is kept intentionally; rewriting it would break
+# every existing clone and the redirect. The CURRENT tree and all new commits are clean
+# and enforced (make gitleaks / gitleaks-staged with the canonical fleet denylist).
+# Fingerprints are commit:file:rule:line — they contain no secret/identity strings.
+1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:125
+1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:127
+1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:22
+1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:24
+1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:45
+1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:47
+1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:49
+1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:5
+1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:50
+1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:58
+1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:60
+1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:62
+1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:64
+5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:15
+5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:16
+5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:17
+5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:18
+5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:22
+5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:28
+5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:29
+5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:5
+63d5dddde364f84bb6d746988b7a297a360dac70:README.md:luxardolabs-org-denylist:6
+9c20eb304f3f90988fc50044fbbbaf65ebca7342:grafana/shared/kidde_collector-by_device.json:luxardolabs-org-denylist:2677
+9c20eb304f3f90988fc50044fbbbaf65ebca7342:grafana/shared/kidde_collector-by_measurement.json:luxardolabs-org-denylist:3083

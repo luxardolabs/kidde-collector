@@ -1,0 +1,16 @@
+name: kidde-collector
+
+# Prod stack (fleet standard: compose never builds — it pulls the :latest image the
+# Makefile released). Config/secrets live in .env.prod (gitignored). The Dockerfile
+# ships a HEALTHCHECK, so no compose-level healthcheck is needed. No host networking
+# / no published ports — the collector reaches OUT to the Kidde cloud + your InfluxDB.
+
+services:
+  kidde-collector:
+    container_name: kidde-collector
+    image: ghcr.io/luxardolabs/kidde-collector:latest
+    env_file:
+      - .env.prod
+    restart: always
+    volumes:
+      - /mnt/docker/kidde-collector/output:/app/output

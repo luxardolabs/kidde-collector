@@ -1,0 +1,24 @@
+name: kidde-collector
+
+# Collector-only stack (fleet standard: compose never builds — it pulls the :dev
+# image the Makefile pushed, or a local build via KIDDE_IMAGE). Config/secrets live
+# in .env.dev (gitignored) — see .env.example. Kidde is a cloud API, so no host
+# networking / no published ports: the collector reaches OUT to Kidde + your InfluxDB.
+#   docker compose ps            # health in STATUS column
+#   docker inspect kidde-collector | jq '.[0].State.Health'
+
+services:
+  kidde-collector:
+    container_name: kidde-collector
+    image: ${KIDDE_IMAGE:-ghcr.io/luxardolabs/kidde-collector:latest}
+    env_file:
+      - .env.dev
+    restart: always
+    healthcheck:
+      test: ["CMD", "python3", "-m", "app.health.check"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    volumes:
+      - /mnt/docker/kidde-collector/output:/app/output

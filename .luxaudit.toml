@@ -1,0 +1,15 @@
+# luxaudit — fleet dependency-vulnerability (SCA) guard. Sibling of .luxarch.toml / .luxlint.toml.
+# Mount-only: luxaudit reads the source below and checks every pinned dependency against the LIVE
+# OSV + PyPA advisory feed (fetched at run, never baked). See docs/ONBOARDING.md in the luxaudit repo.
+
+[source]
+# Pin the source explicitly to poetry.lock. luxaudit would auto-detect it anyway, but this repo also
+# carries a gitignored legacy output/legacy-build/requirements.txt — pinning keeps the scan
+# deterministic and off that quarantined file. poetry.lock is the single source of truth here.
+paths = ["poetry.lock"]
+
+# [[ignore]]
+# The ratchet dial — defer a specific vuln (owner's call) WITH a mandatory reason. A deferred vuln is
+# still REPORTED, never hidden; it does not fake green. Empty on purpose — real vulns get upgraded.
+# id = "PYSEC-YYYY-NN"
+# reason = "why it's not exploitable / upgrade blocked until … — KIDDECOLLE-###"

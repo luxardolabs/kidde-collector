@@ -1,0 +1,12 @@
+# Local-only Make overrides — copy to `Makefile.local` (gitignored) and set your
+# private registry host. `Makefile.local` is `-include`d before the empty committed
+# defaults, so these `?=` assignments win.
+#
+# The private registry host is intentionally kept OUT of this public repo. Without a
+# Makefile.local, registry-dependent targets (release / dev-build-push / lint / format /
+# arch / test-e2e) no-op or skip; build-local + the compose stacks (public GHCR image) still work.
+
+REGISTRY ?= docker.your-registry.example:5000
+LUXARCH_REGISTRY ?= docker.your-registry.example:5000
+LUXLINT_REGISTRY ?= docker.your-registry.example:5000
+LUXAUDIT_REGISTRY ?= docker.your-registry.example:5000

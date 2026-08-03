@@ -1,0 +1,35 @@
+[tool.poetry]
+name = "kidde-collector"
+version = "2026.8.0"
+description = "Data collection service for Kidde HomeSafe smart smoke/CO detectors — polls the Kidde cloud API and writes device + air-quality metrics to InfluxDB."
+authors = ["luxardolabs"]
+license = "AGPL-3.0-only"
+readme = "README.md"
+packages = [{include = "app"}]
+
+[tool.poetry.dependencies]
+python = "^3.14"
+aiohttp = "^3.10.0"
+aiofiles = "^24.1.0"
+influxdb-client = "^1.50.0"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.15.21"
+mypy = "^2.2.0"
+pytest = "^9.1.1"
+pytest-asyncio = "^1.4.0"
+pytest-mock = "^3.14.0"
+types-aiofiles = "^24.1.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+# --- ruff / mypy / pytest config are NOT carried here -------------------------
+# The canonical ruff + mypy + pytest standard is owned by luxlint (one fleet config,
+# byte-identical, shipped in the mount-only image) and enforced via `make lint`
+# (luxlint's `lint.no_local_ruff_config` / `types.no_local_mypy_config` /
+# `test.no_local_pytest_config` checks forbid a per-repo [tool.ruff] / [tool.mypy] /
+# [tool.pytest.ini_options] here). `make test` runs the canonical pytest config as an
+# in-repo tail (`luxlint --emit-config pytest` → `pytest -c <it>`), exactly like the
+# mypy tail; `make format` emits the canonical ruff config to gitignored .ruff.local.toml.

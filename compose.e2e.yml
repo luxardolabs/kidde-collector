@@ -1,0 +1,52 @@
+name: kidde-collector-e2e
+
+# Hardware-free end-to-end test harness. Everything is on the default bridge network
+# and NO host ports are published, so it never collides and runs in CI. The fake Kidde
+# endpoint serves the auth + REST API; the collector targets it via the API base-url
+# override and writes to a throwaway InfluxDB. Driven by `make test-e2e`, which builds
+# the collector image from CURRENT source and sets KIDDE_IMAGE. All values here are
+# fixed test values, not secrets.
+
+services:
+  kidde_influxdb:
+    image: influxdb:2.7
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: kidde
+      DOCKER_INFLUXDB_INIT_PASSWORD: kidde-e2e-password
+      DOCKER_INFLUXDB_INIT_ORG: kidde
+      DOCKER_INFLUXDB_INIT_BUCKET: kidde
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: kidde-e2e-token
+    volumes:
+      - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  kidde_fake:
+    build: ./harness
+    environment:
+      KIDDE_FAKE_PORT: "8080"
+      KIDDE_FAKE_LOCATION_ID: "356103"
+      KIDDE_FAKE_LOCATION_LABEL: "E2E Home"
+
+  kidde-collector:
+    image: ${KIDDE_IMAGE:-luxardolabs/kidde-collector:latest}
+    environment:
+      KIDDE_COLLECTOR_KIDDE_USERNAME: e2e@example.com
+      KIDDE_COLLECTOR_KIDDE_PASSWORD: e2e-password
+      KIDDE_COLLECTOR_API_BASE_URL: http://kidde_fake:8080/api/v4
+      KIDDE_COLLECTOR_INFLUXDB_URL: http://kidde_influxdb:8086
+      KIDDE_COLLECTOR_INFLUXDB_ORG: kidde
+      KIDDE_COLLECTOR_INFLUXDB_BUCKET: kidde
+      KIDDE_COLLECTOR_INFLUXDB_TOKEN: kidde-e2e-token
+      KIDDE_COLLECTOR_FETCH_INTERVAL_SECONDS: "10"
+      KIDDE_COLLECTOR_WRITE_API_DATA: "false"
+      KIDDE_COLLECTOR_LOG_LEVEL: INFO
+    depends_on:
+      kidde_influxdb:
+        condition: service_healthy
+      kidde_fake:
+        condition: service_started

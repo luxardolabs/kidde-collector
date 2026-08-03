@@ -1,0 +1,28 @@
+# luxlint — fleet code-style + type standard (sibling of .luxarch.toml).
+# Carries only WHERE to look and what this repo defers — never lint config.
+# The canonical ruff/mypy config lives in the luxlint image, byte-identical
+# fleet-wide. See docs/ONBOARDING.md in the luxlint repo.
+
+[source]
+paths = ["app"]   # the collector package — lint + format-check + mypy target
+
+[python]
+target = "py314"  # this collector runs Python 3.14 — per-repo fact (since luxlint 0.1.3),
+                  # NOT baked into the fleet floor. Grants native PEP 758 except tuples +
+                  # PEP 649 deferred annotations; ruff/mypy target py314 accordingly.
+
+[gitleaks]
+# Repo-specific known NON-secrets, appended to the canonical gitleaks allowlist at emit time
+# (PATH regexes only; the org denylist for internal infra domain / retired identity stays baked in the
+# luxlint image, never committed). .env.example / .env.demo / Makefile.local.example are already
+# canonical. These are the demo/e2e/emulator files carrying throwaway test tokens.
+allow = [
+    '''(^|/)\.env\.dev\.local\.example$''',
+    '''(^|/)compose\.e2e\.yml$''',
+    '''(^|/)scripts/e2e-test\.sh$''',
+    '''(^|/)harness/fake_kidde\.py$''',
+]
+
+# [rules.deferred]
+# The ratchet dial (owner's call, mandatory evidence line, drains to zero).
+# Reds are left RED and burned down via tickets, NOT parked here. Empty on purpose.

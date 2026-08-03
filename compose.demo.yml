@@ -1,0 +1,87 @@
+name: kidde-collector-demo
+
+# DEMO stack — "click go", no Kidde account, no hardware. Same bundled InfluxDB +
+# pre-provisioned Grafana as the dev stack, but the collector authenticates against a
+# FAKE Kidde endpoint (the harness emulator) and polls its REST API, so the dashboards
+# populate out of the box. Bring up with `make demo-up`, open Grafana at
+# http://localhost:3000 (admin/admin). Everything is on the default bridge network;
+# the collector reaches the fake + InfluxDB by service name. Config in .env.demo.
+# Override the collector image with KIDDE_IMAGE=<tag> to demo a local build.
+
+services:
+  kidde_influxdb:
+    image: influxdb:2.7
+    container_name: kidde_influxdb
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USER}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - kidde_influxdb_data:/var/lib/influxdb2
+      - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
+    ports:
+      - "${INFLUX_PORT:-8086}:8086"
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  kidde_grafana:
+    image: grafana/grafana:11.3.0
+    container_name: kidde_grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      INFLUX_BUCKET: ${INFLUX_BUCKET}
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/shared-local:/var/lib/grafana/dashboards:ro
+      - kidde_grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      kidde_influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- Fake Kidde cloud endpoint (emulator) — no account/hardware needed ---
+  kidde_fake:
+    build: ./harness
+    container_name: kidde_fake
+    environment:
+      KIDDE_FAKE_PORT: "8080"
+      KIDDE_FAKE_LOCATION_ID: "356103"
+      KIDDE_FAKE_LOCATION_LABEL: "Demo Home"
+    restart: unless-stopped
+
+  kidde-collector:
+    image: ${KIDDE_IMAGE:-ghcr.io/luxardolabs/kidde-collector:latest}
+    container_name: kidde-collector
+    env_file:
+      - .env.demo
+    environment:
+      # Target the fake Kidde endpoint instead of the real cloud.
+      KIDDE_COLLECTOR_API_BASE_URL: http://kidde_fake:8080/api/v4
+      KIDDE_COLLECTOR_INFLUXDB_URL: http://kidde_influxdb:8086
+      # Poll fast so the demo dashboards populate quickly.
+      KIDDE_COLLECTOR_FETCH_INTERVAL_SECONDS: "15"
+    restart: unless-stopped
+    depends_on:
+      kidde_influxdb:
+        condition: service_healthy
+      kidde_fake:
+        condition: service_started
+    volumes:
+      - kidde_collector_output:/app/output
+
+volumes:
+  kidde_influxdb_data:
+  kidde_grafana_data:
+  kidde_collector_output:

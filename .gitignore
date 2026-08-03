@@ -1,0 +1,62 @@
+# --- Local Make overrides — private registry host (only Makefile.local.example committed) ---
+Makefile.local
+
+# --- Secrets / environment (only *.example is committed) ---
+.env
+.env.dev
+.env.prod
+.env.local
+.env.*.local
+
+# --- Legacy secret-bearing files quarantined during the fleet-standard alignment ---
+# (set_env*.sh, compose.*.yaml, real captures/cookies) — kept locally, never committed.
+output/
+
+# --- Runtime output (device JSON dumps + session cookies; bind-mounted, never committed) ---
+/app/output/
+export/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.so
+.Python
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Tooling caches ---
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- luxlint local emissions (canonical config is owned by the luxlint image, not committed) ---
+# .gitignore has no inline comments — patterns must stand alone on their own line.
+# .ruff.local.toml : `make format` emits the canonical ruff config here for your editor.
+# .luxlint.mypy.ini: transient emitted mypy config for the `make lint` tail (deleted after the run).
+.ruff.local.toml
+.luxlint.mypy.ini
+.luxlint.pytest.ini
+.test-image.stamp
+
+# --- Editors / OS ---
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# --- Claude local settings (settings.json IS committed; local is not) ---
+.claude/settings.local.json
+**/.claude/settings.local.json

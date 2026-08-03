@@ -1,0 +1,8 @@
+# Pilot key for kidde-collector (collector). Proves parity: reproduces kidde's
+# local `make arch`, and is strictly tighter (adds the add_signal_handler rule
+# kidde's own test omits — kidde already passes it).
+
+[[target]]
+kind = "collector"
+app = "app"
+source_client = ["collector/session.py"]   # kidde's long-lived source session
