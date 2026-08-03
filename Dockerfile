@@ -77,7 +77,10 @@ LABEL version="${BUILD_VERSION}" \
       build_timestamp="${BUILD_TIMESTAMP}" \
       commit="${BUILD_COMMIT}" \
       description="Kidde Collector — Kidde HomeSafe device + air-quality metrics to InfluxDB" \
-      maintainer="Luxardo Labs"
+      maintainer="Luxardo Labs" \
+      org.opencontainers.image.source="https://github.com/luxardolabs/kidde-collector" \
+      org.opencontainers.image.url="https://github.com/luxardolabs/kidde-collector" \
+      org.opencontainers.image.licenses="AGPL-3.0-only"
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD ["python3", "-m", "app.health.check"]
