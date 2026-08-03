@@ -73,14 +73,17 @@ ENV KIDDE_COLLECTOR_VERSION=${BUILD_VERSION} \
     BUILD_VERSION=${BUILD_VERSION} \
     BUILD_TIMESTAMP=${BUILD_TIMESTAMP} \
     BUILD_COMMIT=${BUILD_COMMIT}
-LABEL version="${BUILD_VERSION}" \
-      build_timestamp="${BUILD_TIMESTAMP}" \
-      commit="${BUILD_COMMIT}" \
-      description="Kidde Collector — Kidde HomeSafe device + air-quality metrics to InfluxDB" \
-      maintainer="Luxardo Labs" \
+# OCI-standard image annotations (single canonical set — no custom-key duplicates).
+# `.source` is what GHCR reads to auto-link the package to this repo.
+LABEL org.opencontainers.image.title="Kidde Collector" \
+      org.opencontainers.image.description="Kidde HomeSafe device + air-quality metrics to InfluxDB" \
       org.opencontainers.image.source="https://github.com/luxardolabs/kidde-collector" \
-      org.opencontainers.image.url="https://github.com/luxardolabs/kidde-collector" \
-      org.opencontainers.image.licenses="AGPL-3.0-only"
+      org.opencontainers.image.url="https://www.luxardolabs.com" \
+      org.opencontainers.image.vendor="Luxardo Labs" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.version="${BUILD_VERSION}" \
+      org.opencontainers.image.revision="${BUILD_COMMIT}" \
+      org.opencontainers.image.created="${BUILD_TIMESTAMP}"
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   CMD ["python3", "-m", "app.health.check"]
