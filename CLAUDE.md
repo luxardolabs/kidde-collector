@@ -90,7 +90,7 @@ Required: `INFLUXDB_URL`, `INFLUXDB_TOKEN`, `INFLUXDB_ORG`, `INFLUXDB_BUCKET`, `
 1. **API base URL is env-overridable** (`KIDDE_COLLECTOR_API_BASE_URL`) so the dev/demo/e2e stacks can target the harness emulator instead of the real cloud.
 1. **InfluxDB writes** use the asyncio-native `InfluxDBClientAsync` (fleet ingestion standard): opened in `connect()` inside the loop, `ping()` fails fast on an unreachable server, and each poll cycle's points are one awaited batch write (no Rx thread, no buffer to flush; gzip on). Auth/bucket errors (401/404) log actionable guidance and keep retrying.
 1. **Error handling**: the loop continues despite individual failures — check logs.
-1. **Docker**: four-stage `Dockerfile` (builder → builder-dev → base → dev). Prod pulls `:latest`; dev/demo/test pull/build `:dev`. `Dockerfile.lint` overlays current source for lint/test.
+1. **Docker**: four-stage `Dockerfile` (builder → builder-dev → base → dev). Prod pulls `:latest`; the local dev/demo stacks build the runtime image. Lint/type checks run mount-only against the source (no app image); `make test` builds a lean `Dockerfile.test` image from `poetry.lock` and over-mounts the source — neither inherits `:dev`.
 1. **NO AI attribution** in commits/PRs (house rule — no Co-Authored-By, "Generated with", robot emoji).
 
 Migration/alignment chunks are tracked as LuxPM issues (project `KIDDECOLLE`).

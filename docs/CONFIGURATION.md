@@ -63,11 +63,11 @@ Writes use the asyncio-native `InfluxDBClientAsync` (fleet ingestion standard): 
 
 ## Output / Capture
 
-| Variable                         | Default  | Description                                                            |
-| -------------------------------- | -------- | ---------------------------------------------------------------------- |
-| `KIDDE_COLLECTOR_WRITE_API_DATA` | `false`  | Append each cycle's raw API response to `output/api_data_<date>.json`. |
-| `KIDDE_COLLECTOR_EXPORT_FOLDER`  | `output` | Directory for raw captures (bind-mounted).                             |
-| `KIDDE_COLLECTOR_COOKIES_DIR`    | `output` | Directory for the persisted session cookie file.                       |
+| Variable                         | Default  | Description                                                                                        |
+| -------------------------------- | -------- | -------------------------------------------------------------------------------------------------- |
+| `KIDDE_COLLECTOR_WRITE_API_DATA` | `false`  | Append each cycle's raw API response to `output/api_data_<date>.jsonl` (one JSON object per line). |
+| `KIDDE_COLLECTOR_EXPORT_FOLDER`  | `output` | Directory for raw captures (bind-mounted).                                                         |
+| `KIDDE_COLLECTOR_COOKIES_DIR`    | `output` | Directory for the persisted session cookie file.                                                   |
 
 ## Logging
 

@@ -34,9 +34,11 @@ make demo-up       # self-contained demo (fake Kidde + InfluxDB + Grafana)
 make dev-up        # dev stack: real Kidde account + bundled InfluxDB + Grafana
 make up            # collector-only, against YOUR external InfluxDB (edit .env.dev)
 
-make lint          # ruff check + ruff format --check + mypy (fresh image, current source)
-make test          # pytest suite
-make check         # lint + test
+make lint          # luxlint: canonical ruff + mypy + docstrings + secret-config guard
+make test          # pytest suite (canonical config, lock-built image)
+make arch          # luxarch: architecture conformance
+make audit         # luxaudit: dependency-CVE scan (live OSV + PyPA feed)
+make check         # everything: lint + arch + audit + test + secret scan
 make poetry-lock   # regenerate poetry.lock (poetry-in-docker; no host poetry needed)
 make release       # build + push :VERSION + :latest (multi-arch) to the private registry
 
@@ -74,6 +76,15 @@ One measurement, `kidde_collector_device`:
 Two Grafana dashboards (`grafana/shared-local/`) — "By Device" and "By Measurement" — are auto-provisioned in the dev/demo stacks.
 
 ![Kidde Collector — By Measurement dashboard](docs/kidde_collector-by_measurement.jpg)
+
+## Documentation
+
+- [Getting Started](docs/GETTING-STARTED.md) — prerequisites and the three ways to run it.
+- [Deployment](docs/DEPLOYMENT.md) — the published image, Compose, and remote/production deploys.
+- [Configuration](docs/CONFIGURATION.md) — every `KIDDE_COLLECTOR_*` variable, defaults, and bounds.
+- [Grafana Dashboards](docs/DASHBOARDS.md) — the dashboards, datasource/DBRP, and importing into your own Grafana.
+- [Troubleshooting](docs/TROUBLESHOOTING.md) — no data, offline devices, re-auth, port clashes, and more.
+- [Contributing](CONTRIBUTING.md) — dev setup and how to submit a change.
 
 ## Support
 
