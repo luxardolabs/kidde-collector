@@ -1,12 +1,8 @@
 # Kidde Collector
 
-A headless **Python** data collector that polls the **Kidde HomeSafe** cloud API
-for smart smoke / CO / air-quality detector metrics and writes them to **InfluxDB** for
-monitoring and visualization in **Grafana**. It reaches OUT to Kidde and OUT to InfluxDB
-— it publishes **no inbound port**.
+A headless **Python** data collector that polls the **Kidde HomeSafe** cloud API for smart smoke / CO / air-quality detector metrics and writes them to **InfluxDB** for monitoring and visualization in **Grafana**. It reaches OUT to Kidde and OUT to InfluxDB — it publishes **no inbound port**.
 
-Part of the Luxardo Labs collector fleet; follows the collector fleet standard with
-**kasa-collector** as the reference implementation.
+Part of the Luxardo Labs collector fleet; follows the collector fleet standard with **kasa-collector** as the reference implementation.
 
 ![Kidde Collector — By Device dashboard](docs/kidde_collector-by_device.jpg)
 
@@ -14,10 +10,8 @@ Part of the Luxardo Labs collector fleet; follows the collector fleet standard w
 
 - Collects smoke / CO / air-quality detector metrics from the **Kidde HomeSafe** cloud API.
 - Stores device + air-quality data in **InfluxDB** as time series.
-- Ships **pre-built Grafana dashboards** ("By Device" and "By Measurement"), auto-provisioned
-  in the dev/demo stacks.
-- **Docker-first** — a self-contained demo stack (`make demo-up`) runs with no Kidde account
-  or hardware.
+- Ships **pre-built Grafana dashboards** ("By Device" and "By Measurement"), auto-provisioned in the dev/demo stacks.
+- **Docker-first** — a self-contained demo stack (`make demo-up`) runs with no Kidde account or hardware.
 
 ## Quickstart (no Kidde account, no hardware)
 
@@ -51,45 +45,33 @@ python -m app.main
 python -m app.health.check   # container healthcheck
 ```
 
-Dependencies are managed with **Poetry** (`pyproject.toml` + committed `poetry.lock`);
-there is no `requirements.txt`.
+Dependencies are managed with **Poetry** (`pyproject.toml` + committed `poetry.lock`); there is no `requirements.txt`.
 
 ## The four run stacks
 
-Distinguished by source (real vs fake Kidde) and observability (external vs bundled).
-All `.yml`, short-form volumes, on the **bridge network** (Kidde is a cloud API — no host
-networking). Compose never builds except the fake-Kidde service in demo/e2e.
+Distinguished by source (real vs fake Kidde) and observability (external vs bundled). All `.yml`, short-form volumes, on the **bridge network** (Kidde is a cloud API — no host networking). Compose never builds except the fake-Kidde service in demo/e2e.
 
-| Stack | compose file | source | InfluxDB/Grafana | make |
-|-------|--------------|--------|------------------|------|
-| collector-only | `compose.yml` (+ `compose.prod.yml`) | real | external (your fleet) | `make up` / `prod-*` |
-| dev | `compose.dev.yml` | real | bundled, auto-provisioned | `make dev-up` |
-| demo | `compose.demo.yml` | fake (emulator) | bundled, auto-provisioned | `make demo-up` |
-| test | `compose.e2e.yml` | fake | ephemeral, no Grafana | `make test-e2e` |
+| Stack          | compose file                         | source          | InfluxDB/Grafana          | make                 |
+| -------------- | ------------------------------------ | --------------- | ------------------------- | -------------------- |
+| collector-only | `compose.yml` (+ `compose.prod.yml`) | real            | external (your fleet)     | `make up` / `prod-*` |
+| dev            | `compose.dev.yml`                    | real            | bundled, auto-provisioned | `make dev-up`        |
+| demo           | `compose.demo.yml`                   | fake (emulator) | bundled, auto-provisioned | `make demo-up`       |
+| test           | `compose.e2e.yml`                    | fake            | ephemeral, no Grafana     | `make test-e2e`      |
 
 ## Configuration
 
-All config is via `KIDDE_COLLECTOR_*` environment variables (see `app/core/config.py`).
-**Secrets live in gitignored `.env.dev` / `.env.prod`** (copy from `.env.example`); the
-dev stack layers an optional gitignored `.env.dev.local` (copy from
-`.env.dev.local.example`) with your real Kidde account. `.env.demo` is committed,
-non-secret bundled-stack config.
+All config is via `KIDDE_COLLECTOR_*` environment variables (see `app/core/config.py`). **Secrets live in gitignored `.env.dev` / `.env.prod`** (copy from `.env.example`); the dev stack layers an optional gitignored `.env.dev.local` (copy from `.env.dev.local.example`) with your real Kidde account. `.env.demo` is committed, non-secret bundled-stack config.
 
-Required: `INFLUXDB_URL`, `INFLUXDB_TOKEN`, `INFLUXDB_ORG`, `INFLUXDB_BUCKET`,
-`KIDDE_USERNAME`, `KIDDE_PASSWORD` (all `KIDDE_COLLECTOR_`-prefixed). The full list of
-knobs (defaults, bounds) is in [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md).
+Required: `INFLUXDB_URL`, `INFLUXDB_TOKEN`, `INFLUXDB_ORG`, `INFLUXDB_BUCKET`, `KIDDE_USERNAME`, `KIDDE_PASSWORD` (all `KIDDE_COLLECTOR_`-prefixed). The full list of knobs (defaults, bounds) is in [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md).
 
 ## Data model
 
 One measurement, `kidde_collector_device`:
 
 - **tags**: `id`, `serial_number`, `location_id`, `location_label`, `label`
-- **fields**: every scalar device attribute (`smoke_alarm`, `co_level`, `temperature`,
-  `battery_state`, `smoke_level`, …), plus per-metric `{name}_value` / `{name}_status`
-  for the air-quality panel: `iaq_temperature`, `humidity`, `hpa`, `tvoc`, `iaq`, `co2`.
+- **fields**: every scalar device attribute (`smoke_alarm`, `co_level`, `temperature`, `battery_state`, `smoke_level`, …), plus per-metric `{name}_value` / `{name}_status` for the air-quality panel: `iaq_temperature`, `humidity`, `hpa`, `tvoc`, `iaq`, `co2`.
 
-Two Grafana dashboards (`grafana/shared-local/`) — "By Device" and "By Measurement" —
-are auto-provisioned in the dev/demo stacks.
+Two Grafana dashboards (`grafana/shared-local/`) — "By Device" and "By Measurement" — are auto-provisioned in the dev/demo stacks.
 
 ![Kidde Collector — By Measurement dashboard](docs/kidde_collector-by_measurement.jpg)
 

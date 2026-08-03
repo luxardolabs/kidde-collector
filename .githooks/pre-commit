@@ -1,7 +1,0 @@
-#!/bin/sh
-# Fleet pre-commit hook — secret scan of STAGED changes with the canonical luxlint
-# gitleaks config (built-in credential rules + the fleet org denylist for internal
-# infra / retired identity). Blocks a leak before it is ever committed.
-#
-# Install once:  make install-hooks   (sets core.hooksPath=.githooks)
-exec make gitleaks-staged

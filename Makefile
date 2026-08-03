@@ -65,13 +65,13 @@ RUFF_VERSION ?= 0.15.22
 
 # Architecture guard (luxarch) — pinned; registry host comes from Makefile.local (see above).
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  ?= 0.19.0
+LUXARCH_VERSION  ?= 0.21.2
 
 # Code-style + type standard (luxlint) — pinned; registry host comes from Makefile.local.
 # luxlint ships from the PRIVATE registry only (never GHCR), so the host stays out of this
 # public repo exactly like LUXARCH_REGISTRY. Without it, `make lint`/`make format` skip.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  ?= 0.9.0
+LUXLINT_VERSION  ?= 0.10.0
 LUXLINT_IMAGE    := $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 
 # Dependency-vulnerability guard (luxaudit) — pinned; registry host comes from Makefile.local.
@@ -390,9 +390,9 @@ gitleaks-staged: ## Pre-commit secret scan of STAGED changes (canonical luxlint 
 	  ghcr.io/gitleaks/gitleaks:latest protect --staged /repo -c /gl.toml --redact -v; rc=$$?; \
 	rm -f $$gl; exit $$rc
 
-install-hooks: ## Install the committed git pre-commit hook (secret scan of staged changes)
-	git config core.hooksPath .githooks
-	@echo "✓ pre-commit hook active (runs 'make gitleaks-staged' before each commit)"
+install-hooks: ## Activate the committed fleet secret hooks (core.hooksPath=hooks; pre-commit + pre-push)
+	git config core.hooksPath hooks
+	@echo "✓ secret hooks active (core.hooksPath=hooks: gitleaks-staged on commit, gitleaks on push)"
 
 ##@ Utilities
 
