@@ -42,12 +42,9 @@ allow = [
 
 # --- Per-site ruff carve-outs (rule stays live everywhere else) --------------------
 # code+file+match so only that literal is exempt; evidence required and re-checked every run.
-[[allowlist.ruff]]
-code     = "T201"
-file     = "check.py"
-match    = "print("
-evidence = "Docker HEALTHCHECK entrypoint (`python -m app.health.check`, per the fleet collector layout — see the Dockerfile HEALTHCHECK). Its entire interface is an exit code plus stdout, which Docker captures and surfaces in `docker inspect .State.Health.Log` — that text is what an operator reads when the collector is unhealthy. Routing it to the logger instead would empty the healthcheck output. Same carve-out and rationale as kasa-collector, the fleet reference collector."
-
+# NOTE: the health/check.py T201 carve-out that used to live here was removed at luxlint
+# 0.42.0, which added `**/health/check.py` to the FLEET T20 entrypoint carve-out (LUXSTATS-83)
+# — a repo-local duplicate of a fleet exemption is drift.
 [[allowlist.ruff]]
 code     = "T201"
 file     = "fake_kidde.py"

@@ -15,7 +15,6 @@ Each device becomes one main point in the ``kidde_collector_device`` measurement
              the liveness fields (see app.core.config OFFLINE_FLAGS / LIVENESS_FIELDS).
 """
 
-import contextlib
 import logging
 import re
 from datetime import UTC, datetime
@@ -48,7 +47,10 @@ def _age_seconds(timestamp: Any) -> float | None:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=UTC)
         return max(0.0, (datetime.now(UTC) - dt).total_seconds())
-    except Exception:
+    # swallowed-exceptions: an unparseable/absent timestamp is a DATA condition, not an
+    # error — None means "no freshness known" and the caller omits the field. Narrowed from
+    # a bare Exception to the parse failures that can actually occur here.
+    except ValueError, TypeError, AttributeError:
         return None
 
 
@@ -110,13 +112,23 @@ class InfluxDBStorage:
         try:
             version = await self.client.version()
             logger.info("Connected to InfluxDB (server %s)", version)
+        # swallowed-exceptions: the server version is cosmetic log detail. ping() already
+        # succeeded above (that is the real health gate), so a version() failure must not
+        # abort a working connection — we just log without the version.
         except Exception:
             logger.info("Connected to InfluxDB")
 
     async def _close_client(self) -> None:
         if self.client is not None:
-            with contextlib.suppress(Exception):
+            # swallowed-exceptions: teardown path. A close failure must not mask the reason
+            # we are shutting down (re-raising here would replace the real shutdown cause
+            # with a socket error), so it is recorded at warning level instead of re-raised
+            # — an upgrade from the silent contextlib.suppress(Exception) that previously
+            # discarded it entirely. The client is dropped either way.
+            try:
                 await self.client.close()
+            except Exception as e:
+                logger.warning("Error closing the InfluxDB client: %s", e)
             self.client = None
             self.write_api = None
 
@@ -149,6 +161,11 @@ class InfluxDBStorage:
             logger.debug("Wrote %d points to InfluxDB", len(points))
         except InfluxDBError as e:
             self._log_write_error(e)
+        # swallowed-exceptions: a failed write is logged at error level and the cycle ends;
+        # the poll loop retries on the next interval. This collector is a sampler, not a
+        # ledger — points are re-derived every cycle, so a dropped batch self-heals rather
+        # than being lost data needing a retry queue. InfluxDBError (auth/bucket) is handled
+        # above with actionable guidance; this arm is the transport/unknown catch-all.
         except Exception as e:
             logger.error("Error writing to InfluxDB: %s", e)
 

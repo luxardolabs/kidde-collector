@@ -5,6 +5,7 @@ bind-mounted output dir, and reuse them across restarts. On a 401/403 (expired/i
 session) the poller drops the cookie file so the next cycle re-authenticates.
 """
 
+import asyncio
 import json
 
 import aiofiles
@@ -71,31 +72,43 @@ class KiddeSession:
             else:
                 logger.error("HTTP error %s - %s", e.status, e.message)
             return None
+        # swallowed-exceptions: a failed login must not kill the collector. Returning None
+        # is the handled outcome — the caller skips this cycle and the poll loop retries on
+        # the next interval (the documented resilience contract). The cause is logged at
+        # error level, so the failure is recorded, not lost.
         except Exception as e:
             logger.error("Failed to create Kidde client: %s", e)
             return None
 
     async def load_cookies(self) -> dict[str, str] | None:
-        if not self.cookies_file_path.exists():
+        # .exists() is a blocking stat() — off the loop (blocking-io sweep).
+        if not await asyncio.to_thread(self.cookies_file_path.exists):
             logger.debug("No cookies file found")
             return None
         logger.debug("Loading cookies from %s", self.cookies_file_path)
+        # blocking-io: aiofiles.open is the ASYNC file API, not pathlib.Path.open — the
+        # read is awaited and never touches the loop's thread. Sweep matches on the method
+        # name; the receiver here is the aiofiles module.
         async with aiofiles.open(self.cookies_file_path) as file:
             cookies: dict[str, str] = json.loads(await file.read())
             return cookies
 
     async def save_cookies(self, cookies: dict[str, str]) -> None:
         logger.debug("Saving cookies to %s", self.cookies_file_path)
+        # blocking-io: aiofiles.open is the ASYNC file API, not pathlib.Path.open — see load_cookies.
         async with aiofiles.open(self.cookies_file_path, "w") as file:
             await file.write(json.dumps(cookies))
         # The session cookie is a live bearer credential — keep it owner-only on the
-        # bind-mounted output dir.
-        self.cookies_file_path.chmod(0o600)
+        # bind-mounted output dir. .chmod() is a blocking syscall — off the loop.
+        await asyncio.to_thread(self.cookies_file_path.chmod, 0o600)
 
     def invalidate(self) -> None:
         """Drop the cached cookie file so the next cycle re-authenticates."""
         try:
             self.cookies_file_path.unlink(missing_ok=True)
             logger.info("Cleared cached Kidde cookies; will re-login next cycle")
+        # swallowed-exceptions: best-effort cleanup. Failing to delete a cached cookie file
+        # (read-only mount, permissions) must not abort the re-auth path it exists to enable
+        # — the next login simply overwrites it. Recorded at error level.
         except Exception as e:
             logger.error("Failed to clear cookies file: %s", e)

@@ -40,9 +40,10 @@ def check_recent_capture() -> tuple[bool, str]:
         return False, "No api_data_*.jsonl capture file found"
 
     capture = max(candidates, key=lambda f: f.stat().st_mtime)
-    # Both sides tz-aware (UTC): a naive now() reads as local time while the mtime is an
-    # absolute epoch, so a container on a non-UTC TZ would compute an age hours off and
-    # flap the healthcheck.
+    # Both sides tz-aware (UTC). Naive local wall-clock is not monotonic: at a DST
+    # fall-back the local hour REPEATS, so a capture written at 01:30 CDT and read at
+    # 01:30 CST (a real hour later) subtracts to 0s. That fails OPEN — a stale collector
+    # reports healthy. Absolute UTC on both sides is immune.
     file_age = datetime.datetime.now(datetime.UTC) - datetime.datetime.fromtimestamp(
         capture.stat().st_mtime, tz=datetime.UTC
     )

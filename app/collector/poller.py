@@ -50,6 +50,11 @@ class KiddeCollector:
                     "Session expired (401/403); clearing cookies to re-login next cycle"
                 )
                 self.session.invalidate()
+            # swallowed-exceptions: THE poll-loop resilience contract (CLAUDE.md: "the loop
+            # continues despite individual failures"). One bad cycle — a Kidde outage, a
+            # malformed payload — must not end the process; the next interval retries. The
+            # message is logged at error level with a full traceback at debug, so nothing
+            # vanishes silently. Re-raising here would exit the collector on any transient.
             except Exception as e:
                 logger.error("An error occurred: %s", e)
                 logger.debug("%s", traceback.format_exc())
@@ -80,6 +85,8 @@ class KiddeCollector:
         current_date = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
         json_file_name = Path(config.EXPORT_FOLDER) / f"api_data_{current_date}.jsonl"
         # Newline-delimited JSON — one compact object per cycle (parseable; date-partitioned).
+        # blocking-io: aiofiles.open is the ASYNC file API, not pathlib.Path.open — the
+        # append is awaited and never blocks the loop. Sweep matches on the method name.
         async with aiofiles.open(json_file_name, "a") as f:
             await f.write(json.dumps(serializable_data) + "\n")
         logger.debug("Raw API data saved to %s", json_file_name)
