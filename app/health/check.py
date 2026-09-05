@@ -40,8 +40,11 @@ def check_recent_capture() -> tuple[bool, str]:
         return False, "No api_data_*.jsonl capture file found"
 
     capture = max(candidates, key=lambda f: f.stat().st_mtime)
-    file_age = datetime.datetime.now() - datetime.datetime.fromtimestamp(
-        capture.stat().st_mtime
+    # Both sides tz-aware (UTC): a naive now() reads as local time while the mtime is an
+    # absolute epoch, so a container on a non-UTC TZ would compute an age hours off and
+    # flap the healthcheck.
+    file_age = datetime.datetime.now(datetime.UTC) - datetime.datetime.fromtimestamp(
+        capture.stat().st_mtime, tz=datetime.UTC
     )
     if file_age > timedelta(seconds=MAX_AGE_SECONDS):
         return (

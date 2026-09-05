@@ -19,9 +19,14 @@ make test-e2e        # hardware-free end-to-end: fake Kidde -> collector -> Infl
 make demo-up         # self-contained demo: fake Kidde + bundled InfluxDB + Grafana (localhost:3000)
 make dev-up          # dev stack: real Kidde account + bundled InfluxDB + Grafana
 
-make lint            # ruff check + ruff format --check + mypy (fresh image, current source)
-make test            # pytest suite (needs the :dev image; dev-build-push first, or build locally)
-make check           # lint + test
+make lint            # luxlint: canonical ruff + the code-style/doc/secret-config checks (mount-only)
+make mypy            # luxlint type leg: mypy, fleet stubs baked (mount-only; its OWN gate step)
+make format          # THE canonical fixer, in place: ruff --fix + ruff format + markdown
+make test            # pytest suite (lock-built Dockerfile.test image + over-mounted source)
+make check           # THE fleet gate: guard-version-check honest lint mypy test arch audit gitleaks
+make plan            # the full luxarch red board at once — the worklist (`make check` stops at the first red)
+make status          # regenerate the committed .lux*-status.json guard-status files
+make guard-upgrade   # bump every guard pin to latest (prints what newly bites)
 make poetry-lock     # regenerate poetry.lock (poetry-in-docker; no host poetry needed)
 make release         # build + push :VERSION + :latest (multi-arch) to the private registry
 
@@ -30,7 +35,7 @@ python -m app.main
 python -m app.health.check   # container healthcheck
 ```
 
-Dependencies are managed with **Poetry** (`pyproject.toml` + committed `poetry.lock`). There is no `requirements.txt`. `make lint`/`make test` build a fresh image from CURRENT source (never exec into the baked container — stale code). Ports 3000/8086 collide with other running fleet stacks; override `GRAFANA_PORT`/`INFLUX_PORT` for local dev/demo.
+Dependencies are managed with **Poetry** as the dependency manager; the **build backend is hatchling** and `VERSION` is the single version source (`dynamic = ["version"]`), so nothing else carries a version literal. There is no `requirements.txt`. `make lint`/`make mypy` are **mount-only** — they run inside the pinned luxlint image against the source, so the repo installs no ruff/mypy of its own; `make test` builds a lean image from `poetry.lock` and over-mounts CURRENT source (never exec into the baked container — stale code). Ports 3000/8086 collide with other running fleet stacks; override `GRAFANA_PORT`/`INFLUX_PORT` for local dev/demo.
 
 ## Architecture Overview
 

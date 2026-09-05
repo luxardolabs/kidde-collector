@@ -34,11 +34,12 @@ make demo-up       # self-contained demo (fake Kidde + InfluxDB + Grafana)
 make dev-up        # dev stack: real Kidde account + bundled InfluxDB + Grafana
 make up            # collector-only, against YOUR external InfluxDB (edit .env.dev)
 
-make lint          # luxlint: canonical ruff + mypy + docstrings + secret-config guard
+make lint          # luxlint: canonical ruff + docstrings + secret-config guard (mount-only)
+make mypy          # luxlint type leg: mypy with the fleet stubs baked (mount-only)
 make test          # pytest suite (canonical config, lock-built image)
 make arch          # luxarch: architecture conformance
 make audit         # luxaudit: dependency-CVE scan (live OSV + PyPA feed)
-make check         # everything: lint + arch + audit + test + secret scan
+make check         # THE fleet gate: version-check + honesty + lint + mypy + test + arch + audit + secret scan
 make poetry-lock   # regenerate poetry.lock (poetry-in-docker; no host poetry needed)
 make release       # build + push :VERSION + :latest (multi-arch) to the private registry
 

@@ -77,7 +77,7 @@ class KiddeCollector:
         logger.info("Processed %d devices", len(data.devices or {}))
 
     async def _dump_raw(self, serializable_data: dict[str, Any]) -> None:
-        current_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        current_date = datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d")
         json_file_name = Path(config.EXPORT_FOLDER) / f"api_data_{current_date}.jsonl"
         # Newline-delimited JSON — one compact object per cycle (parseable; date-partitioned).
         async with aiofiles.open(json_file_name, "a") as f:

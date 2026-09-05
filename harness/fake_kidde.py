@@ -22,11 +22,13 @@ Env knobs: KIDDE_FAKE_PORT (8080), KIDDE_FAKE_LOCATION_ID (356103),
 KIDDE_FAKE_LOCATION_LABEL (Fake Home).
 """
 
+import contextlib
 import json
 import math
 import os
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
 from urllib.parse import urlparse
 
 PORT = int(os.getenv("KIDDE_FAKE_PORT", "8080"))
@@ -49,7 +51,7 @@ def _wobble(base: float, amp: float, phase: float, t: float) -> float:
     return round(base + amp * math.sin(t / 30.0 + phase), 2)
 
 
-def location_list() -> list:
+def location_list() -> list[dict[str, Any]]:
     return [
         {
             "id": LOCATION_ID,
@@ -64,18 +66,30 @@ def location_list() -> list:
     ]
 
 
-def _iaq_block(t: float) -> dict:
+def _iaq_block(t: float) -> dict[str, dict[str, Any]]:
     return {
-        "iaq_temperature": {"value": _wobble(73.6, 2.0, 0, t), "status": "Good", "Unit": "F"},
-        "humidity": {"value": _wobble(36.2, 4.0, 1, t), "status": "Good", "Unit": "%RH"},
-        "hpa": {"value": _wobble(98911, 40, 2, t), "status": "Unhealthy", "Unit": "hpa"},
+        "iaq_temperature": {
+            "value": _wobble(73.6, 2.0, 0, t),
+            "status": "Good",
+            "Unit": "F",
+        },
+        "humidity": {
+            "value": _wobble(36.2, 4.0, 1, t),
+            "status": "Good",
+            "Unit": "%RH",
+        },
+        "hpa": {
+            "value": _wobble(98911, 40, 2, t),
+            "status": "Unhealthy",
+            "Unit": "hpa",
+        },
         "tvoc": {"value": _wobble(600, 400, 3, t), "status": "Moderate", "Unit": "ppb"},
         "iaq": {"value": _wobble(92.2, 5.0, 4, t), "status": "Good", "Unit": ""},
         "co2": {"value": _wobble(922, 120, 5, t), "status": "Good", "Unit": "PPM"},
     }
 
 
-def device_list() -> list:
+def device_list() -> list[dict[str, Any]]:
     t = time.time() - _T0
     devices = []
     for i, d in enumerate(DEVICES):
@@ -108,10 +122,12 @@ def device_list() -> list:
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def log_message(self, *args):  # silence per-request logging
-        pass
+    def log_message(
+        self, format: str, *args: Any
+    ) -> None:  # matches the BaseHTTPRequestHandler signature
+        """Silence per-request access logging (the e2e harness reads only our banner)."""
 
-    def _json(self, obj, code: int = 200, cookie: str | None = None) -> None:
+    def _json(self, obj: Any, code: int = 200, cookie: str | None = None) -> None:
         body = json.dumps(obj).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
@@ -154,10 +170,8 @@ def main() -> None:
         f"(location {LOCATION_ID} '{LOCATION_LABEL}', {len(DEVICES)} devices)",
         flush=True,
     )
-    try:
+    with contextlib.suppress(KeyboardInterrupt):
         server.serve_forever()
-    except KeyboardInterrupt:
-        pass
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ import contextlib
 import os
 import signal
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 
 from app.collector.poller import KiddeCollector
 from app.collector.session import KiddeSession
@@ -45,7 +45,7 @@ def validate_environment() -> None:
 async def main() -> None:
     logger.info(
         "Welcome to Kidde Collector! Current time: %s",
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S"),
     )
     logger.info("Build Version: %s", config.BUILD_VERSION)
     logger.info("Build Timestamp: %s", config.BUILD_TIMESTAMP)

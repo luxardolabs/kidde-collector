@@ -65,13 +65,13 @@ RUFF_VERSION ?= 0.15.22
 
 # Architecture guard (luxarch) — pinned; registry host comes from Makefile.local (see above).
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  ?= 0.21.2
+LUXARCH_VERSION  ?= 0.126.0
 
 # Code-style + type standard (luxlint) — pinned; registry host comes from Makefile.local.
 # luxlint ships from the PRIVATE registry only (never GHCR), so the host stays out of this
 # public repo exactly like LUXARCH_REGISTRY. Without it, `make lint`/`make format` skip.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  ?= 0.10.0
+LUXLINT_VERSION  ?= 0.41.0
 LUXLINT_IMAGE    := $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 
 # Dependency-vulnerability guard (luxaudit) — pinned; registry host comes from Makefile.local.
@@ -80,7 +80,7 @@ LUXLINT_IMAGE    := $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 # it drops, no rebuild). Private registry only. Without the host, `make audit` skips. Same
 # out-of-tree pattern as LUXARCH_REGISTRY / LUXLINT_REGISTRY.
 LUXAUDIT_REGISTRY ?=
-LUXAUDIT_VERSION  ?= 0.1.8
+LUXAUDIT_VERSION  ?= 0.4.0
 LUXAUDIT_IMAGE    := $(LUXAUDIT_REGISTRY)/luxardolabs/luxaudit:$(LUXAUDIT_VERSION)
 POETRY_RUN := docker run --rm -u $(REPO_UID):$(REPO_GID) -e HOME=/tmp -v $(PWD):/work -w /work python:3.14-slim sh -c
 POETRY_PIP := python -m venv /tmp/v && /tmp/v/bin/pip install -q --root-user-action=ignore $(POETRY_SPEC)
@@ -112,7 +112,8 @@ PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
         demo-up demo-down demo-clean demo-logs demo-ps \
         check-prod-node prod-init prod-sync prod-deploy prod-status prod-logs-remote prod-health prod-rollback \
         poetry-lock poetry-update poetry-install \
-        test-build lint format test arch audit guard-version-check test-e2e check \
+        test-build lint mypy format test arch audit test-e2e \
+        guard-version-check guard-upgrade honest check plan status \
         gitleaks gitleaks-staged install-hooks clean clean-all
 
 .DEFAULT_GOAL := help
@@ -136,10 +137,26 @@ version: ## Show version / build info
 
 ##@ Docker — Build & Registry
 
-buildx-setup: ## Ensure a buildx builder exists (multi-arch release builds)
-	@docker buildx inspect kidde-builder >/dev/null 2>&1 \
-		|| docker buildx create --name kidde-builder --use
-	@docker buildx use kidde-builder
+# The WHOLE fleet shares ONE buildx builder (repo.shared_buildx_builder). A per-project
+# builder holds a completely separate cache — no base-layer sharing, its own pip mounts,
+# unbounded growth (ten builders measured at ~72G, deduplicating to ~10-15G on one).
+# Cap it once with a buildkitd GC policy — see luxarch --doc FLEET-BUILD-DEPLOY-STANDARD.
+BUILDX_BUILDER ?= luxardo-builder
+BUILDKITD_CONFIG ?= $(HOME)/.docker/buildkitd.toml
+
+buildx-setup: ## Ensure the shared, GC-capped fleet buildx builder exists (multi-arch release builds)
+	@# The builder is created ONCE and shared, so it must self-prune: a create-once builder
+	@# with no buildkitd GC policy grows without bound (repo.buildx_builder_gc_capped). The
+	@# name being canonical says nothing about pruning — the cap is the `--buildkitd-config`.
+	@if [ ! -f "$(BUILDKITD_CONFIG)" ]; then \
+		mkdir -p "$$(dirname $(BUILDKITD_CONFIG))"; \
+		printf '[worker.oci]\n  gc = true\n  [[worker.oci.gcpolicy]]\n    keepBytes = "20GB"\n    all = true\n' > "$(BUILDKITD_CONFIG)"; \
+		echo "seeded $(BUILDKITD_CONFIG) (20GB buildkit GC cap)"; \
+	fi
+	@docker buildx inspect $(BUILDX_BUILDER) >/dev/null 2>&1 \
+		|| docker buildx create --name $(BUILDX_BUILDER) --driver docker-container \
+			--buildkitd-config $(BUILDKITD_CONFIG) --use
+	@docker buildx use $(BUILDX_BUILDER)
 
 dev-build-push: ## Build + push :dev ONLY (tooling stage: dev deps + tests baked)
 	docker build $(NO_CACHE_FLAG) --target dev -f Dockerfile $(BUILD_ARGS) -t $(DEV_IMAGE) .
@@ -305,29 +322,23 @@ poetry-install: ## Verify deps resolve + install cleanly from poetry.lock (docke
 
 test-build: .test-image.stamp ## Build the lean test image from the lock (only when deps change)
 
-lint: ## luxlint (ruff, mount-only) + mypy tail — ONE recipe; fails if either fails. Needs LUXLINT_REGISTRY (Makefile.local).
+lint: ## luxlint (ruff + the canonical checks, mount-only). Needs LUXLINT_REGISTRY (Makefile.local).
 	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \
 	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping lint"; \
-	else set +e; \
-	  docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE); ruff=$$?; \
-	  docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --emit-config mypy > .luxlint.mypy.ini; \
-	  docker run --rm -v $(PWD)/.luxlint.mypy.ini:/cfg/mypy.ini:ro -v $(PWD):/w -w /w -e MYPYPATH=/w python:3.14-slim \
-	    sh -c 'pip install -q "mypy>=2.3" types-aiofiles && mypy --config-file /cfg/mypy.ini app'; mypy=$$?; \
-	  rm -f .luxlint.mypy.ini; \
-	  if [ $$ruff -ne 0 ] || [ $$mypy -ne 0 ]; then \
-	    echo "lint FAILED (luxlint=$$ruff mypy=$$mypy)"; exit 1; \
-	  fi; \
-	fi
+	else docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE); fi
 
-format: ## Auto-fix + format with the CANONICAL ruff config (luxlint-emitted to gitignored .ruff.local.toml). Needs LUXLINT_REGISTRY.
+# The type leg is its OWN gate step (repo.makefile_canonical). Since luxlint 0.2x it is
+# mount-only like ruff — the fleet's typed-dependency union is baked into the image, so
+# there is no in-repo mypy tail to install and no second, drifting mypy pinned here.
+mypy: ## mypy via luxlint (fleet stubs baked, mount-only). Needs LUXLINT_REGISTRY.
+	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \
+	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping mypy"; \
+	else docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --mypy; fi
+
+format: ## Apply the CANONICAL fixer in place: ruff check --fix + ruff format + markdown. Needs LUXLINT_REGISTRY.
 	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \
 	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping format"; \
-	else \
-	  docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --emit-config ruff > .ruff.local.toml; \
-	  docker run --rm --user $(REPO_UID):$(REPO_GID) -e HOME=/tmp -v $(PWD):/w -w /w python:3.14-slim \
-	    sh -c 'python -m venv /tmp/v && /tmp/v/bin/pip install -q --root-user-action=ignore "ruff==$(RUFF_VERSION)" && \
-	           { /tmp/v/bin/ruff check --config /w/.ruff.local.toml --fix app; /tmp/v/bin/ruff format --config /w/.ruff.local.toml app; }'; \
-	fi
+	else docker run --rm --user $(REPO_UID):$(REPO_GID) -v $(PWD):/repo $(LUXLINT_IMAGE) --format; fi
 
 test: .test-image.stamp ## Canonical pytest suite: lock-built deps image + over-mounted source (no :dev). Needs LUXLINT_REGISTRY.
 	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \
@@ -356,20 +367,68 @@ test-e2e: ## Hardware-free end-to-end test: fake Kidde endpoint -> collector -> 
 	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(E2E_IMAGE) .
 	KIDDE_IMAGE=$(E2E_IMAGE) ./scripts/e2e-test.sh
 
-guard-version-check: ## Warn (non-fatal) if any fleet guard pin is behind latest — pulls :latest FIRST so the compare is honest
+guard-version-check: ## FATAL: fail the gate if any fleet guard pin is behind the published latest
 	@reg="$(LUXARCH_REGISTRY)"; \
-	if [ -z "$$reg" ]; then echo "guard-version-check: registry unset (Makefile.local) — skipping"; else \
-	  for gv in "luxarch $(LUXARCH_VERSION)" "luxlint $(LUXLINT_VERSION)" "luxaudit $(LUXAUDIT_VERSION)"; do \
-	    set -- $$gv; name=$$1; pin=$$2; \
-	    docker pull -q $$reg/luxardolabs/$$name:latest >/dev/null 2>&1 || true; \
-	    latest=$$(docker run --rm $$reg/luxardolabs/$$name:latest --version 2>/dev/null | awk '{print $$2}'); \
-	    if [ -n "$$latest" ] && [ "$$latest" != "$$pin" ]; then \
-	      printf "⚠ %-9s pinned %s, latest %s — bump (the pinned tool changed)\n" "$$name" "$$pin" "$$latest"; \
-	    else printf "✓ %-9s %s (latest)\n" "$$name" "$$pin"; fi; \
-	  done; \
-	fi
+	if [ -z "$$reg" ]; then echo "guard-version-check: registry unset (Makefile.local) — skipping"; exit 0; fi; \
+	rc=0; \
+	for gv in "luxarch $(LUXARCH_VERSION)" "luxlint $(LUXLINT_VERSION)" "luxaudit $(LUXAUDIT_VERSION)"; do \
+	  set -- $$gv; name=$$1; pin=$$2; \
+	  docker pull -q $$reg/luxardolabs/$$name:latest >/dev/null 2>&1 || true; \
+	  latest=$$(docker run --rm $$reg/luxardolabs/$$name:latest --version 2>/dev/null | awk '{print $$2}'); \
+	  if [ -n "$$latest" ] && [ "$$latest" != "$$pin" ]; then \
+	    printf "✗ %-9s pinned %s, latest %s — behind. Preview: --new-rules --since %s; then \`make guard-upgrade\`\n" "$$name" "$$pin" "$$latest" "$$pin"; rc=1; \
+	  else printf "✓ %-9s %s (latest)\n" "$$name" "$$pin"; fi; \
+	done; exit $$rc
 
-check: guard-version-check lint arch audit test gitleaks ## Version-check + lint + arch + audit + test + secret scan
+guard-upgrade: ## Bump every guard pin to the published latest (prints what newly bites)
+	@reg="$(LUXARCH_REGISTRY)"; \
+	if [ -z "$$reg" ]; then echo "guard-upgrade: registry unset (Makefile.local) — skipping"; exit 0; fi; \
+	for gv in "luxarch LUXARCH_VERSION $(LUXARCH_VERSION)" "luxlint LUXLINT_VERSION $(LUXLINT_VERSION)" "luxaudit LUXAUDIT_VERSION $(LUXAUDIT_VERSION)"; do \
+	  set -- $$gv; name=$$1; var=$$2; old=$$3; \
+	  docker pull -q $$reg/luxardolabs/$$name:latest >/dev/null 2>&1 || true; \
+	  latest=$$(docker run --rm $$reg/luxardolabs/$$name:latest --version 2>/dev/null | awk '{print $$2}'); \
+	  [ -z "$$latest" ] && continue; \
+	  sed -i "s/^\($$var *\)?= .*/\1?= $$latest/" Makefile; \
+	  if [ "$$name" = luxarch ] && [ -n "$$old" ] && [ "$$old" != "$$latest" ]; then \
+	    docker run --rm -v $(PWD):/repo $$reg/luxardolabs/luxarch:$$latest --new-rules --since $$old || true; \
+	  fi; \
+	done; echo "pins bumped — re-run make check"
+
+# HONESTY gate: a green `make check` must mean nothing was silently unchecked.
+#   luxarch --assert-scans : FAIL iff a rule family scanned ZERO files (a hollow green) — NOT on reds
+#   luxlint --preflight    : FAIL iff the mypy leg would be dishonest (shared-overlay Any-flood)
+honest: ## Honesty gate — fail if a guard family scanned nothing or the type leg is dishonest
+	@if [ -z "$(LUXARCH_REGISTRY)" ] || [ -z "$(LUXLINT_REGISTRY)" ]; then \
+	  echo "honest: guard registry unset (Makefile.local) — skipping"; exit 0; fi
+	@docker run --rm -v $(PWD):/repo $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION) --assert-scans
+	@docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --preflight
+
+# THE fleet gate — byte-identical composition across every repo (repo.makefile_canonical).
+# Order: pin drift -> honesty -> ruff -> types -> tests -> architecture -> dep CVEs -> secrets.
+# It is a GATE, not a report: Make stops at the first failing step. For the full red board at
+# once, run `make plan` (luxarch --plan) — reds phase-ordered and clustered by file.
+check: guard-version-check honest lint mypy test arch audit gitleaks ## THE fleet gate — run before every commit
+
+plan: ## The full luxarch red board at once — phase-ordered, clustered by file (the worklist)
+	@if [ -z "$(LUXARCH_REGISTRY)" ]; then echo "luxarch: LUXARCH_REGISTRY unset — skipping"; exit 0; fi; \
+	docker run --rm -v $(PWD):/repo $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION) --plan
+
+# Committed guard-status files: the fleet READS these instead of re-running every guard on
+# every repo (luxarch --doc FLEET-STATUS). They are guard-generated lockfiles, never
+# hand-edited — `--json` plus the commit SHA + UTC timestamp they were computed at, so a
+# stale green is DETECTED on read rather than silently trusted. A red repo still commits a
+# valid red status. `|| true` because `--json` exits non-zero when the repo is red — the
+# verdict is IN the JSON. `set -e` so a failed stamp aborts instead of writing a false green.
+STAMP = python3 -c 'import json,sys,os; d=json.load(open(sys.argv[1])); d["commit"]=os.environ["SHA"]; d["generated_at"]=os.environ["TS"]; json.dump(d,open(sys.argv[2],"w"),indent=2)'
+
+status: ## Regenerate the committed guard-status files (.lux*-status.json) — then COMMIT them
+	@if [ -z "$(LUXARCH_REGISTRY)" ] || [ -z "$(LUXLINT_REGISTRY)" ] || [ -z "$(LUXAUDIT_REGISTRY)" ]; then \
+	  echo "status: guard registry unset (Makefile.local) — skipping"; exit 0; fi
+	@set -e; export SHA=$$(git rev-parse HEAD) TS=$$(date -u +%FT%TZ); \
+	docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --json > /tmp/lux.json || true; $(STAMP) /tmp/lux.json .luxlint-status.json; \
+	docker run --rm -v $(PWD):/repo $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION) --json > /tmp/lux.json || true; $(STAMP) /tmp/lux.json .luxarch-status.json; \
+	docker run --rm -v $(PWD):/repo $(LUXAUDIT_IMAGE) --json > /tmp/lux.json || true; $(STAMP) /tmp/lux.json .luxaudit-status.json; \
+	echo "wrote .lux*-status.json at $$SHA — commit them"
 
 # Secret scan uses the CANONICAL luxlint gitleaks config (built-in credential rules + the fleet org
 # denylist for internal infra domain / retired identity + the fleet allowlist), EMITTED at scan time to

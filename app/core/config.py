@@ -9,6 +9,11 @@ import logging
 import os
 from pathlib import Path
 
+# Module logger, never the root logger (ruff LOG015): a root-logger call implicitly
+# configures the root handler on first use, which hijacks logging for anything that
+# imports this module and bypasses the collector's own handler set up in app.utils.logging.
+logger = logging.getLogger(__name__)
+
 
 class ConfigValidator:
     """Validates and coerces configuration values with bounds checking."""
@@ -24,7 +29,7 @@ class ConfigValidator:
             num = int(value)
         except (ValueError, TypeError) as e:
             if default is not None:
-                logging.warning(
+                logger.warning(
                     "Value '%s' is not an integer, using default %s", value, default
                 )
                 return default
@@ -33,7 +38,7 @@ class ConfigValidator:
             max_val is not None and num > max_val
         ):
             if default is not None:
-                logging.warning(
+                logger.warning(
                     "Value %s out of range [%s, %s], using default %s",
                     num,
                     min_val,
@@ -51,7 +56,7 @@ class ConfigValidator:
         elif value.lower() in ("false", "0", "no", "off"):
             return False
         elif default is not None:
-            logging.warning(
+            logger.warning(
                 "Invalid boolean value '%s', using default %s", value, default
             )
             return default
@@ -63,7 +68,7 @@ class ConfigValidator:
         upper_value = value.upper()
         if upper_value in valid_levels:
             return upper_value
-        logging.warning("Invalid log level '%s', using default %s", value, default)
+        logger.warning("Invalid log level '%s', using default %s", value, default)
         return default
 
 
@@ -88,7 +93,7 @@ def _warn_if_insecure_url(name: str, url: str | None) -> None:
     if url and url.startswith("http://"):
         host = url.split("://", 1)[1].split("/", 1)[0].split(":", 1)[0]
         if host not in ("localhost", "127.0.0.1", "kidde_influxdb", "kidde_fake"):
-            logging.warning(
+            logger.warning(
                 "%s uses http:// (cleartext) to non-local host '%s' — use https:// in "
                 "production so the token and telemetry aren't sent in the clear.",
                 name,

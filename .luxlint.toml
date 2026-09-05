@@ -4,7 +4,20 @@
 # fleet-wide. See docs/ONBOARDING.md in the luxlint repo.
 
 [source]
-paths = ["app"]   # the collector package — lint + format-check + mypy target
+# Every first-party .py must be either covered here or excluded with a reason
+# (lint.source_declared) — a file the gate never scans is a hollow green.
+paths = [
+    "app",      # the collector package — lint + format-check + mypy target
+    "harness",  # the fake-Kidde emulator: first-party, ships in the demo/e2e stacks, held to the same bar
+]
+exclude = [
+    # Runtime bind-mount dir (gitignored, `output/` in .gitignore): device JSON dumps and
+    # session cookies at run time, plus a pre-fleet legacy snapshot (legacy-src/,
+    # legacy-build/, legacy-secrets/) kept only for reference. None of it is built, imported
+    # or shipped — it is not in any image (.dockerignore) and not in git, so holding it to
+    # the current style bar would be lint on dead code.
+    "output",
+]
 
 [python]
 target = "py314"  # this collector runs Python 3.14 — per-repo fact (since luxlint 0.1.3),
@@ -26,3 +39,17 @@ allow = [
 # [rules.deferred]
 # The ratchet dial (owner's call, mandatory evidence line, drains to zero).
 # Reds are left RED and burned down via tickets, NOT parked here. Empty on purpose.
+
+# --- Per-site ruff carve-outs (rule stays live everywhere else) --------------------
+# code+file+match so only that literal is exempt; evidence required and re-checked every run.
+[[allowlist.ruff]]
+code     = "T201"
+file     = "check.py"
+match    = "print("
+evidence = "Docker HEALTHCHECK entrypoint (`python -m app.health.check`, per the fleet collector layout — see the Dockerfile HEALTHCHECK). Its entire interface is an exit code plus stdout, which Docker captures and surfaces in `docker inspect .State.Health.Log` — that text is what an operator reads when the collector is unhealthy. Routing it to the logger instead would empty the healthcheck output. Same carve-out and rationale as kasa-collector, the fleet reference collector."
+
+[[allowlist.ruff]]
+code     = "T201"
+file     = "fake_kidde.py"
+match    = "print("
+evidence = "Standalone Kidde-cloud emulator started as a container CMD in the demo/e2e stacks; the startup banner (flush=True) is read via `docker logs` by scripts/e2e-test.sh. The module configures no logging at all — stdout is deliberately its only output, the 'standalone script whose purpose is stdout' class. Never imported by application code. Mirrors kasa-collector's fake_kasa.py carve-out."

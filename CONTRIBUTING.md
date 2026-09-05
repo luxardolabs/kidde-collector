@@ -13,7 +13,7 @@ Dependencies are managed with **Poetry** (`pyproject.toml` + a committed `poetry
 ```bash
 git clone https://github.com/luxardolabs/kidde-collector.git
 cd kidde-collector
-poetry install --with dev     # runtime + dev deps (ruff, mypy, pytest)
+poetry install --with dev     # runtime + dev deps (pytest)
 ```
 
 Run it against the built-in fake Kidde cloud — no account or hardware needed — with `make demo-up` (see [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md)).
@@ -26,12 +26,11 @@ Run it against the built-in fake Kidde cloud — no account or hardware needed �
 poetry run pytest tests       # the unit suite
 ```
 
-**Style and types** follow one canonical ruff + mypy configuration. You can run the tools locally as a good approximation:
+**Style and types** follow one canonical ruff + mypy configuration that is **not** carried in this repo — it ships inside the guard images, so there is deliberately no `[tool.ruff]`/`[tool.mypy]` here and ruff/mypy are not dev dependencies. Installing current ruff and mypy yourself is a good approximation:
 
 ```bash
-poetry run ruff check app
-poetry run ruff format app
-poetry run mypy app
+pipx run ruff check app harness      # or: pipx run ruff format app harness
+pipx run mypy app
 ```
 
 The exact fleet configuration (ruff, mypy, pytest, architecture, dependency-CVE, and secret scanning) is enforced through a set of pinned, mount-only guard images that live in a **private registry**. Those images are not needed to contribute — the maintainer runs the full `make check` gate on every change before merge, so don't worry if you can't run the guards yourself. Just keep the code clean (ruff/mypy above) and the tests green.
