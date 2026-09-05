@@ -8,7 +8,7 @@ Published multi-arch (linux/amd64 + linux/arm64) to the GitHub Container Registr
 
 ```
 ghcr.io/luxardolabs/kidde-collector:latest      # rolling
-ghcr.io/luxardolabs/kidde-collector:2026.8.0    # pinned (immutable per version)
+ghcr.io/luxardolabs/kidde-collector:2026.09.0    # pinned (immutable per version)
 ```
 
 Pin a specific `:<version>` in production so a deploy is reproducible; `:latest` always points at the newest release. The image runs as a non-root user (`appuser`, uid 1000) and has no build tooling in it.
@@ -42,7 +42,7 @@ Simplest single-container deploy against an InfluxDB you already run:
 docker run -d --name kidde-collector --restart always \
   --env-file .env.prod \
   -v "$PWD/output:/app/output" \
-  ghcr.io/luxardolabs/kidde-collector:2026.8.0
+  ghcr.io/luxardolabs/kidde-collector:2026.09.0
 ```
 
 The `output/` volume holds the persisted session cookie (so restarts don't re-login) and, if enabled, raw API captures. The image ships a `HEALTHCHECK` (`python -m app.health.check`).
