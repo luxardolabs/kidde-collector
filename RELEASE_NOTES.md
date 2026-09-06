@@ -10,4 +10,4 @@ These describe what someone running this collector would actually notice. For th
 
 Format: [`app/release_notes/writing-guide.md`](app/release_notes/writing-guide.md).
 
-> **A note on surface badges.** The writing guide expects badges to be registered in a web app's `templates.py` and releases page. This collector is headless — it has no UI to render them in — so the badges here (`Collector`, `Dashboards`) are plain text naming the two surfaces an operator actually experiences: the running service, and the Grafana dashboards it feeds.
+> **Surface badges are not used here yet.** The fleet writing guide expects a badge per line, registered in a web app's `templates.py` and releases page. This collector is headless and has neither, so the badge wording for a service with no UI is still to be decided fleet-side. Lines carry no badge until that lands.
