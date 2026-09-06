@@ -71,7 +71,7 @@ LUXARCH_VERSION  ?= 0.130.0
 # luxlint ships from the PRIVATE registry only (never GHCR), so the host stays out of this
 # public repo exactly like LUXARCH_REGISTRY. Without it, `make lint`/`make format` skip.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  ?= 0.44.0
+LUXLINT_VERSION  ?= 0.44.1
 LUXLINT_IMAGE    := $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 
 # Dependency-vulnerability guard (luxaudit) — pinned; registry host comes from Makefile.local.
@@ -345,8 +345,9 @@ test: .test-image.stamp ## Canonical pytest suite + coverage ratchet: lock-built
 	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping"; exit 0; \
 	fi; \
 	docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --emit-config pytest > .luxlint.pytest.ini; \
-	docker run --rm -w /app \
+	docker run --rm --network none -w /app \
 	  -v $(PWD)/app:/app/app:ro -v $(PWD)/tests:/app/tests:ro \
+	  -v $(PWD)/harness:/app/harness:ro \
 	  -v $(PWD)/.luxlint.pytest.ini:/cfg/pytest.ini:ro $(TEST_IMAGE) \
 	  pytest -c /cfg/pytest.ini -p no:cacheprovider tests -q \
 	    --cov=app --cov-report=term-missing > .coverage.out 2>&1; \

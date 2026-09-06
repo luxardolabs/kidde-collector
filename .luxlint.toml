@@ -48,9 +48,9 @@ evidence = "Standalone Kidde-cloud emulator started as a container CMD in the de
 # which grew out of KIDDECOLLE-50). It is a RATCHET: it only ever moves UP. A drop below it
 # is RED and the fix is more tests, never a lower floor. Raise it as coverage improves.
 #
-# Adopted at 41% (the measured total when the ratchet landed) and raised to 79% as the
-# KIDDECOLLE-50 burn-down landed: session.py 0->98, poller.py 0->100, influxdb.py 48->80,
-# main.py 0->50, health/check.py 44->71. Still open: client.py (46%) and the main() /
-# asyncio.Runner orchestration in main.py, which is exercised by `make test-e2e` and a live
-# SIGTERM check rather than unit tests.
-coverage_min = 79
+# Adopted at 41% (the measured total when the ratchet landed) and raised as the
+# KIDDECOLLE-50 burn-down landed: client.py 46->100, session.py 0->98, poller.py 0->100,
+# influxdb.py 48->80, main.py 0->50, health/check.py 44->71. Still open: the
+# main()/asyncio.Runner orchestration, covered by `make test-e2e` and a live SIGTERM
+# check rather than unit tests.
+coverage_min = 85
