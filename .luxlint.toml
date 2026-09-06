@@ -45,11 +45,12 @@ evidence = "Standalone Kidde-cloud emulator started as a container CMD in the de
 
 [test]
 # Coverage floor, enforced by `luxlint --coverage-ratchet` in `make test` (luxlint 0.44.0,
-# which grew out of KIDDECOLLE-50). Set to the measured total at adoption — it is a RATCHET:
-# it only ever moves UP. A drop below it is RED and the fix is more tests, never a lower
-# floor. Raise it as coverage improves (the run nudges when you have).
+# which grew out of KIDDECOLLE-50). It is a RATCHET: it only ever moves UP. A drop below it
+# is RED and the fix is more tests, never a lower floor. Raise it as coverage improves.
 #
-# 41% is an honest starting floor, not a target: poller.py, session.py and main.py are all
-# at 0% — the poll loop, the 403 re-auth self-heal, and startup/shutdown wiring. The floor
-# exists so that number cannot silently get worse while those are burned down (KIDDECOLLE-50).
-coverage_min = 41
+# Adopted at 41% (the measured total when the ratchet landed) and raised to 79% as the
+# KIDDECOLLE-50 burn-down landed: session.py 0->98, poller.py 0->100, influxdb.py 48->80,
+# main.py 0->50, health/check.py 44->71. Still open: client.py (46%) and the main() /
+# asyncio.Runner orchestration in main.py, which is exercised by `make test-e2e` and a live
+# SIGTERM check rather than unit tests.
+coverage_min = 79

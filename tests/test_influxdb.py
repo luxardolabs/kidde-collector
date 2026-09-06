@@ -1,3 +1,9 @@
+import logging
+
+from influxdb_client.client.exceptions import InfluxDBError
+
+from app.collector.client import KiddeDataset
+from app.core import config
 from app.storage.influxdb import InfluxDBStorage, _age_seconds
 
 DEVICE = {
@@ -126,3 +132,175 @@ class TestAgeSeconds:
         assert _age_seconds(None) is None
         assert _age_seconds("not-a-timestamp") is None
         assert _age_seconds(12345) is None
+
+
+class FakeResponse:
+    """Minimal stand-in for the RESTResponse InfluxDBError unwraps.
+
+    InfluxDBError reads .data for the message and getheaders()/getheader() for
+    Retry-After, so a bare status object raises AttributeError inside the constructor.
+    """
+
+    def __init__(self, status, data=None):
+        self.status = status
+        self.data = data or b'{"message": "test error"}'
+
+    def getheaders(self):
+        return {}
+
+    def getheader(self, _name, default=None):
+        return default
+
+
+class FakeWriteApi:
+    """Records write calls; optionally raises to exercise the error arms."""
+
+    def __init__(self, raises=None):
+        self.raises = raises
+        self.calls = []
+
+    async def write(self, bucket=None, org=None, record=None):
+        self.calls.append({"bucket": bucket, "org": org, "record": record})
+        if self.raises is not None:
+            raise self.raises
+
+
+def _storage(monkeypatch, write_api=None):
+    """An InfluxDBStorage with connect() bypassed — we test the write path, not the client."""
+    monkeypatch.setattr(config, "INFLUXDB_URL", "http://influx:8086")
+    monkeypatch.setattr(config, "INFLUXDB_TOKEN", "token")
+    monkeypatch.setattr(config, "INFLUXDB_ORG", "org")
+    monkeypatch.setattr(config, "INFLUXDB_BUCKET", "bucket")
+    s = InfluxDBStorage()
+    s.write_api = write_api
+    return s
+
+
+class TestWrite:
+    async def test_no_points_is_a_noop(self, monkeypatch):
+        api = FakeWriteApi()
+        s = _storage(monkeypatch, api)
+        await s._write([])
+        assert api.calls == []
+
+    async def test_no_write_api_is_a_noop(self, monkeypatch):
+        """Never write before connect() — must return quietly, not AttributeError."""
+        s = _storage(monkeypatch, None)
+        await s._write(InfluxDBStorage._device_points(DEVICE, "Tyle"))
+
+    async def test_points_sent_as_one_batch(self, monkeypatch):
+        """The poll cycle IS the batch — one awaited write per cycle, not one per point."""
+        api = FakeWriteApi()
+        s = _storage(monkeypatch, api)
+        points = InfluxDBStorage._device_points(DEVICE, "Tyle")
+        await s._write(points)
+        assert len(api.calls) == 1
+        assert api.calls[0]["record"] == points
+        assert api.calls[0]["bucket"] == "bucket"
+        assert api.calls[0]["org"] == "org"
+
+    async def test_influx_error_is_logged_not_raised(self, monkeypatch):
+        api = FakeWriteApi(raises=InfluxDBError(response=FakeResponse(401)))
+        s = _storage(monkeypatch, api)
+        await s._write(InfluxDBStorage._device_points(DEVICE, "Tyle"))
+
+    async def test_transport_error_is_logged_not_raised(self, monkeypatch):
+        """A dropped batch self-heals next cycle — it must never propagate into the loop."""
+        api = FakeWriteApi(raises=OSError("connection reset"))
+        s = _storage(monkeypatch, api)
+        await s._write(InfluxDBStorage._device_points(DEVICE, "Tyle"))
+
+
+class TestWriteErrorGuidance:
+    """The 401/404/422 arms exist to tell an operator what to actually fix."""
+
+    def _messages(self, caplog, status):
+        caplog.clear()
+        InfluxDBStorage._log_write_error(InfluxDBError(response=FakeResponse(status)))
+        return " ".join(r.getMessage() for r in caplog.records)
+
+    def test_401_names_the_token_and_bucket(self, caplog):
+        with caplog.at_level(logging.ERROR):
+            assert "401" in self._messages(caplog, 401)
+
+    def test_404_names_the_missing_bucket_or_org(self, caplog):
+        with caplog.at_level(logging.ERROR):
+            assert "404" in self._messages(caplog, 404)
+
+    def test_422_is_a_warning_not_an_error(self, caplog):
+        """A partial write persisted the valid points — a cycle warning, not a failure."""
+        caplog.clear()
+        with caplog.at_level(logging.DEBUG):
+            InfluxDBStorage._log_write_error(InfluxDBError(response=FakeResponse(422)))
+        assert [r.levelno for r in caplog.records] == [logging.WARNING]
+
+    def test_unknown_status_still_reports(self, caplog):
+        with caplog.at_level(logging.ERROR):
+            assert "failed" in self._messages(caplog, 500).lower()
+
+
+class TestWriteDataset:
+    async def test_empty_dataset_writes_nothing(self, monkeypatch):
+        api = FakeWriteApi()
+        s = _storage(monkeypatch, api)
+        await s.write_dataset(KiddeDataset(locations={}, devices=None, events=None))
+        assert api.calls == []
+
+    async def test_device_is_tagged_with_its_location_label(self, monkeypatch):
+        api = FakeWriteApi()
+        s = _storage(monkeypatch, api)
+        await s.write_dataset(
+            KiddeDataset(
+                locations={356103: {"id": 356103, "label": "Tyle"}},
+                devices={553549: DEVICE},
+                events=None,
+            )
+        )
+        assert len(api.calls) == 1
+        assert "location_label=Tyle" in _line(api.calls[0]["record"][0])
+
+    async def test_unknown_location_falls_back_to_empty_label(self, monkeypatch):
+        """A device whose location is missing must still be written, not dropped."""
+        api = FakeWriteApi()
+        s = _storage(monkeypatch, api)
+        await s.write_dataset(
+            KiddeDataset(locations={}, devices={553549: DEVICE}, events=None)
+        )
+        assert len(api.calls) == 1
+
+
+class TestCloseClient:
+    async def test_close_without_a_client_is_a_noop(self, monkeypatch):
+        s = _storage(monkeypatch)
+        await s.close()
+
+    async def test_close_releases_the_client(self, monkeypatch):
+        class FakeClient:
+            def __init__(self):
+                self.closed = False
+
+            async def close(self):
+                self.closed = True
+
+        s = _storage(monkeypatch)
+        client = FakeClient()
+        s.client = client
+        await s.close()
+        assert client.closed
+        assert s.client is None and s.write_api is None
+
+    async def test_a_failing_close_is_recorded_not_raised(self, monkeypatch, caplog):
+        """Teardown must not mask the real shutdown cause — but must not vanish either."""
+
+        class ExplodingClient:
+            async def close(self):
+                raise OSError("socket already gone")
+
+        s = _storage(monkeypatch)
+        s.client = ExplodingClient()
+        with caplog.at_level(logging.WARNING):
+            await s.close()
+        assert s.client is None
+        assert any(
+            "closing the InfluxDB client" in r.getMessage() for r in caplog.records
+        )
