@@ -22,8 +22,11 @@ services:
     volumes:
       - kidde_influxdb_data:/var/lib/influxdb2
       - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
-    ports:
-      - "${INFLUX_PORT:-8086}:8086"
+    # NO host port. The collector and Grafana both reach InfluxDB over the compose
+    # network (http://kidde_influxdb:8086), so publishing it only creates a fleet-wide
+    # collision — 8086 is owned by whichever collector stack came up first. Uncomment to
+    # poke the API by hand, and use a port that is yours:
+    #   ports: ["${INFLUX_PORT:-18386}:8086"]
     healthcheck:
       test: ["CMD", "influx", "ping"]
       interval: 5s
@@ -44,8 +47,12 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/shared-local:/var/lib/grafana/dashboards:ro
       - kidde_grafana_data:/var/lib/grafana
+    # Grafana IS published — a human opens it in a browser; that is the one thing here
+    # that genuinely needs a host port. The default is kidde's own port, not 3000: this
+    # host already runs kasa on 3100, luxsignal on 3200 and sense on 13300/13301, and 3000
+    # belongs to whatever app claimed it first. Override with GRAFANA_PORT if 3300 clashes.
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      - "${GRAFANA_PORT:-3300}:3000"
     depends_on:
       kidde_influxdb:
         condition: service_healthy

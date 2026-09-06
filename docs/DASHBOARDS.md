@@ -20,7 +20,7 @@ They use only core Grafana panels — no plugins to install — and a dashboard 
 - `grafana/provisioning/datasources/influxdb.yml` — the InfluxDB datasource, pinned to uid **`kidde_influxdb`**, at `http://kidde_influxdb:8086`.
 - `grafana/provisioning/dashboards/dashboards.yml` — loads the JSON from `grafana/shared-local/`.
 
-Open `http://localhost:3000` (admin / admin) and both dashboards are there, populated.
+Open `http://localhost:3300` (admin / admin) and both dashboards are there, populated.
 
 ## InfluxDB 2.x + InfluxQL: the DBRP mapping
 

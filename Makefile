@@ -65,7 +65,7 @@ RUFF_VERSION ?= 0.15.22
 
 # Architecture guard (luxarch) — pinned; registry host comes from Makefile.local (see above).
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  ?= 0.135.0
+LUXARCH_VERSION  ?= 0.136.0
 
 # Code-style + type standard (luxlint) — pinned; registry host comes from Makefile.local.
 # luxlint ships from the PRIVATE registry only (never GHCR), so the host stays out of this
@@ -216,9 +216,9 @@ shell: ## Shell into the collector container
 
 ##@ Dev — full LOCAL stack (your real Kidde account + bundled InfluxDB + Grafana)
 
-dev-up: build-local ## Build locally + start the full dev stack (real Kidde account; Grafana http://localhost:3000)
+dev-up: build-local ## Build locally + start the full dev stack (real Kidde account; Grafana http://localhost:3300)
 	KIDDE_IMAGE=$(LOCAL_IMAGE) $(DEV_DC) up -d
-	@echo "kidde-collector [dev] — Grafana http://localhost:3000 (admin/admin)"
+	@echo "kidde-collector [dev] — Grafana http://localhost:$(or $(GRAFANA_PORT),3300) (admin/admin)"
 
 dev-down: ## Stop the dev stack (keep data volumes)
 	$(DEV_DC) down
@@ -286,8 +286,7 @@ prod-rollback: check-prod-node ## List image tags cached on the node for rollbac
 
 demo-up: build-local ## Bring up the demo stack — FAKE Kidde endpoint + auto-provisioned InfluxDB + Grafana
 	KIDDE_IMAGE=$(LOCAL_IMAGE) $(DEMO_DC) up -d --build
-	@echo "Grafana:  http://localhost:3000  (admin/admin)  — dashboards populate from the fake Kidde feed"
-	@echo "InfluxDB: http://localhost:8086"
+	@echo "Grafana:  http://localhost:$(or $(GRAFANA_PORT),3300)  (admin/admin)  — dashboards populate from the fake Kidde feed"
 
 demo-down: ## Stop the demo stack (keep data volumes)
 	$(DEMO_DC) down
