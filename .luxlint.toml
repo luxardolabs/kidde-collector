@@ -10,14 +10,6 @@ paths = [
     "app",      # the collector package — lint + format-check + mypy target
     "harness",  # the fake-Kidde emulator: first-party, ships in the demo/e2e stacks, held to the same bar
 ]
-exclude = [
-    # Runtime bind-mount dir (gitignored, `output/` in .gitignore): device JSON dumps and
-    # session cookies at run time, plus a pre-fleet legacy snapshot (legacy-src/,
-    # legacy-build/, legacy-secrets/) kept only for reference. None of it is built, imported
-    # or shipped — it is not in any image (.dockerignore) and not in git, so holding it to
-    # the current style bar would be lint on dead code.
-    "output",
-]
 
 [python]
 target = "py314"  # this collector runs Python 3.14 — per-repo fact (since luxlint 0.1.3),
@@ -50,3 +42,14 @@ code     = "T201"
 file     = "fake_kidde.py"
 match    = "print("
 evidence = "Standalone Kidde-cloud emulator started as a container CMD in the demo/e2e stacks; the startup banner (flush=True) is read via `docker logs` by scripts/e2e-test.sh. The module configures no logging at all — stdout is deliberately its only output, the 'standalone script whose purpose is stdout' class. Never imported by application code. Mirrors kasa-collector's fake_kasa.py carve-out."
+
+[test]
+# Coverage floor, enforced by `luxlint --coverage-ratchet` in `make test` (luxlint 0.44.0,
+# which grew out of KIDDECOLLE-50). Set to the measured total at adoption — it is a RATCHET:
+# it only ever moves UP. A drop below it is RED and the fix is more tests, never a lower
+# floor. Raise it as coverage improves (the run nudges when you have).
+#
+# 41% is an honest starting floor, not a target: poller.py, session.py and main.py are all
+# at 0% — the poll loop, the 403 re-auth self-heal, and startup/shutdown wiring. The floor
+# exists so that number cannot silently get worse while those are burned down (KIDDECOLLE-50).
+coverage_min = 41

@@ -60,3 +60,6 @@ Thumbs.db
 # --- Claude local settings (settings.json IS committed; local is not) ---
 .claude/settings.local.json
 **/.claude/settings.local.json
+
+# Transient coverage report consumed by luxlint --coverage-ratchet in `make test`
+.coverage.out

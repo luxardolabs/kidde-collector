@@ -65,13 +65,13 @@ RUFF_VERSION ?= 0.15.22
 
 # Architecture guard (luxarch) — pinned; registry host comes from Makefile.local (see above).
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  ?= 0.128.0
+LUXARCH_VERSION  ?= 0.130.0
 
 # Code-style + type standard (luxlint) — pinned; registry host comes from Makefile.local.
 # luxlint ships from the PRIVATE registry only (never GHCR), so the host stays out of this
 # public repo exactly like LUXARCH_REGISTRY. Without it, `make lint`/`make format` skip.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  ?= 0.42.0
+LUXLINT_VERSION  ?= 0.44.0
 LUXLINT_IMAGE    := $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 
 # Dependency-vulnerability guard (luxaudit) — pinned; registry host comes from Makefile.local.
@@ -340,7 +340,7 @@ format: ## Apply the CANONICAL fixer in place: ruff check --fix + ruff format + 
 	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping format"; \
 	else docker run --rm --user $(REPO_UID):$(REPO_GID) -v $(PWD):/repo $(LUXLINT_IMAGE) --format; fi
 
-test: .test-image.stamp ## Canonical pytest suite: lock-built deps image + over-mounted source (no :dev). Needs LUXLINT_REGISTRY.
+test: .test-image.stamp ## Canonical pytest suite + coverage ratchet: lock-built deps image + over-mounted source (no :dev). Needs LUXLINT_REGISTRY.
 	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \
 	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping"; exit 0; \
 	fi; \
@@ -348,9 +348,13 @@ test: .test-image.stamp ## Canonical pytest suite: lock-built deps image + over-
 	docker run --rm -w /app \
 	  -v $(PWD)/app:/app/app:ro -v $(PWD)/tests:/app/tests:ro \
 	  -v $(PWD)/.luxlint.pytest.ini:/cfg/pytest.ini:ro $(TEST_IMAGE) \
-	  pytest -c /cfg/pytest.ini -p no:cacheprovider tests -q; rc=$$?; \
+	  pytest -c /cfg/pytest.ini -p no:cacheprovider tests -q \
+	    --cov=app --cov-report=term-missing > .coverage.out 2>&1; \
+	rc=$$?; cat .coverage.out; \
 	rm -f .luxlint.pytest.ini; \
-	exit $$rc
+	if [ $$rc -ne 0 ]; then rm -f .coverage.out; exit $$rc; fi; \
+	docker run --rm -i -v $(PWD):/repo $(LUXLINT_IMAGE) --coverage-ratchet < .coverage.out; \
+	rc=$$?; rm -f .coverage.out; exit $$rc
 
 arch: ## Architecture conformance via luxarch (pinned; reads .luxarch.toml). Needs LUXARCH_REGISTRY (Makefile.local).
 	@if [ -z "$(LUXARCH_REGISTRY)" ]; then \
@@ -459,6 +463,6 @@ clean: ## Clean python/test caches
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	rm -rf .pytest_cache/ .mypy_cache/ .ruff_cache/ .coverage htmlcov/
-	rm -f .test-image.stamp .luxlint.mypy.ini .luxlint.pytest.ini .ruff.local.toml
+	rm -f .test-image.stamp .luxlint.mypy.ini .luxlint.pytest.ini .ruff.local.toml .coverage.out
 
 clean-all: clean docker-clean ## Clean caches + local docker image tags
