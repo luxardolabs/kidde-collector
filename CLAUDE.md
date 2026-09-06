@@ -16,7 +16,7 @@ The `Makefile` is the source of truth. `VERSION` (repo root) is the version sour
 make help            # grouped command help
 make build-local     # build the runtime image from current source (no push)
 make test-e2e        # hardware-free end-to-end: fake Kidde -> collector -> InfluxDB, asserted
-make demo-up         # self-contained demo: fake Kidde + bundled InfluxDB + Grafana (localhost:3000)
+make demo-up         # self-contained demo: fake Kidde + bundled InfluxDB + Grafana (localhost:3300)
 make dev-up          # dev stack: real Kidde account + bundled InfluxDB + Grafana
 
 make lint            # luxlint: canonical ruff + the code-style/doc/secret-config checks (mount-only)
@@ -35,7 +35,7 @@ python -m app.main
 python -m app.health.check   # container healthcheck
 ```
 
-Dependencies are managed with **Poetry** as the dependency manager; the **build backend is hatchling** and `VERSION` is the single version source (`dynamic = ["version"]`), so nothing else carries a version literal. There is no `requirements.txt`. `make lint`/`make mypy` are **mount-only** — they run inside the pinned luxlint image against the source, so the repo installs no ruff/mypy of its own; `make test` builds a lean image from `poetry.lock` and over-mounts CURRENT source (never exec into the baked container — stale code). Ports 3000/8086 collide with other running fleet stacks; override `GRAFANA_PORT`/`INFLUX_PORT` for local dev/demo.
+Dependencies are managed with **Poetry** as the dependency manager; the **build backend is hatchling** and `VERSION` is the single version source (`dynamic = ["version"]`), so nothing else carries a version literal. There is no `requirements.txt`. `make lint`/`make mypy` are **mount-only** — they run inside the pinned luxlint image against the source, so the repo installs no ruff/mypy of its own; `make test` builds a lean image from `poetry.lock` and over-mounts CURRENT source (never exec into the baked container — stale code). Only **Grafana** is published to the host (default `3300`, kidde's own fleet port) — InfluxDB stays on the compose network, so it can never collide; override `GRAFANA_PORT` if 3300 is taken.
 
 ## Architecture Overview
 
