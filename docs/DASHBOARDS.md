@@ -11,6 +11,12 @@ Both live in `grafana/shared-local/` and read the `kidde_collector_device` measu
 - **By Device** (`kidde_collector-by_device.json`) — one view per detector: online/liveness, last seen, last test, battery, and the air-quality metrics for IAQ models.
 - **By Measurement** (`kidde_collector-by_measurement.json`) — one view per metric across all detectors (temperature, humidity, TVOC, CO₂, IAQ, air pressure), good for comparing rooms.
 
+Both also carry a **Safety & Power** row — the alarm and power surface the collector has always stored but nothing displayed: smoke and CO alarms, too-much-smoke, low-battery and end-of-life warnings, battery state/level, CO and peak-CO levels, and the `lost` flag. Booleans render as OK/ALARM (and OK/LOW, OK/REPLACE, OK/LOST) on a coloured background, so a green row reads as safe at a glance; CO carries a threshold at **35 ppm**, the level at which an alarm must sound within four hours.
+
+Its columns are **legitimately sparse** — a blank cell means that model does not report that field, not that data is missing. Measured across a live fleet: `co_alarm`, `battery_state`, `co_level` and `lost` come from every unit; `smoke_alarm` and `too_much_smoke` only from smoke-capable units; `battery_level`, `low_battery_alarm`, `end_of_life_alarm` and `peak_co_level` only from battery-powered CO units.
+
+> The screenshots above predate this row.
+
 They use only core Grafana panels — no plugins to install — and a dashboard variable **`${data_source}`** so you can point them at any InfluxDB datasource.
 
 ## Auto-provisioning (dev / demo stacks)

@@ -71,9 +71,19 @@ Writes use the asyncio-native `InfluxDBClientAsync` (fleet ingestion standard): 
 
 ## Logging
 
-| Variable                    | Default | Description                                              |
-| --------------------------- | ------- | -------------------------------------------------------- |
-| `KIDDE_COLLECTOR_LOG_LEVEL` | `INFO`  | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR` \| `CRITICAL`. |
+| Variable                          | Default | Description                                                                                                                                                                                                                        |
+| --------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `KIDDE_COLLECTOR_LOG_LEVEL`       | `INFO`  | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR` \| `CRITICAL`.                                                                                                                                                                           |
+| `KIDDE_COLLECTOR_STRUCTURED_LOGS` | `false` | Emit single-line JSON logs for a log aggregator instead of the colored console format. Each record carries `timestamp` (UTC), `level`, `logger`, `message`, any `extra=` fields, and a serialized `exception` when one is present. |
+
+## Build provenance (set by the image, not by you)
+
+The Dockerfile stamps these from its `BUILD_*` build args and the collector echoes them at startup, so a running container can be traced back to the build that produced it. Set them only if you run the collector outside the published image.
+
+| Variable                          | Description                                      |
+| --------------------------------- | ------------------------------------------------ |
+| `KIDDE_COLLECTOR_BUILD_VERSION`   | Image version, from the `VERSION` file at build. |
+| `KIDDE_COLLECTOR_BUILD_TIMESTAMP` | UTC build time, also on the OCI `created` label. |
 
 ## Health Check
 
