@@ -10,7 +10,7 @@ Part of the Luxardo Labs collector fleet; follows the collector fleet standard w
 
 - Collects smoke / CO / air-quality detector metrics from the **Kidde HomeSafe** cloud API.
 - Stores device + air-quality data in **InfluxDB** as time series.
-- Ships **pre-built Grafana dashboards** ("By Device" and "By Measurement"), auto-provisioned in the dev/demo stacks.
+- Ships **pre-built Grafana dashboards** ("By Device" and "By Measurement"), auto-provisioned in the dev/demo stacks — air quality, plus a **Safety & Power** row for smoke/CO alarms, battery and end-of-life state.
 - **Docker-first** — a self-contained demo stack (`make demo-up`) runs with no Kidde account or hardware.
 
 ## Quickstart (no Kidde account, no hardware)
@@ -36,10 +36,15 @@ make up            # collector-only, against YOUR external InfluxDB (edit .env.d
 
 make lint          # luxlint: canonical ruff + docstrings + secret-config guard (mount-only)
 make mypy          # luxlint type leg: mypy with the fleet stubs baked (mount-only)
-make test          # pytest suite (canonical config, lock-built image)
+make test          # pytest suite + coverage ratchet (canonical config, lock-built image, no network)
+make format        # THE canonical fixer, in place: ruff --fix + ruff format + markdown
 make arch          # luxarch: architecture conformance
 make audit         # luxaudit: dependency-CVE scan (live OSV + PyPA feed)
+make gitleaks      # full-history secret scan (also wired to fire on every commit/push)
 make check         # THE fleet gate: version-check + honesty + lint + mypy + test + arch + audit + secret scan
+make plan          # the full luxarch board at once — reds, sweeps and audit items
+make status        # regenerate the committed .lux*-status.json guard-status files
+make guard-upgrade # bump every guard pin to latest (prints what newly bites)
 make poetry-lock   # regenerate poetry.lock (poetry-in-docker; no host poetry needed)
 make release       # build + push :VERSION + :latest (multi-arch) to the private registry
 
@@ -74,7 +79,7 @@ One measurement, `kidde_collector_device`:
 - **tags**: `id`, `serial_number`, `location_id`, `location_label`, `label`
 - **fields**: every scalar device attribute (`smoke_alarm`, `co_level`, `temperature`, `battery_state`, `smoke_level`, …), plus per-metric `{name}_value` / `{name}_status` for the air-quality panel: `iaq_temperature`, `humidity`, `hpa`, `tvoc`, `iaq`, `co2`.
 
-Two Grafana dashboards (`grafana/shared-local/`) — "By Device" and "By Measurement" — are auto-provisioned in the dev/demo stacks.
+Two Grafana dashboards (`grafana/shared-local/`) — "By Device" and "By Measurement" — are auto-provisioned in the dev/demo stacks. Both carry a **Safety & Power** row (alarms, battery, CO) alongside the air-quality panels; see [DASHBOARDS.md](docs/DASHBOARDS.md).
 
 ![Kidde Collector — By Measurement dashboard](docs/kidde_collector-by_measurement.jpg)
 

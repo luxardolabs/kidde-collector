@@ -23,6 +23,8 @@ make lint            # luxlint: canonical ruff + the code-style/doc/secret-confi
 make mypy            # luxlint type leg: mypy, fleet stubs baked (mount-only; its OWN gate step)
 make format          # THE canonical fixer, in place: ruff --fix + ruff format + markdown
 make test            # pytest suite (lock-built Dockerfile.test image + over-mounted source)
+make arch            # luxarch: architecture conformance (pinned, mount-only)
+make audit           # luxaudit: dependency-CVE scan against the live OSV + PyPA feed
 make check           # THE fleet gate: guard-version-check honest lint mypy test arch audit gitleaks
 make plan            # the full luxarch red board at once — the worklist (`make check` stops at the first red)
 make status          # regenerate the committed .lux*-status.json guard-status files
