@@ -1,5 +1,6 @@
 import logging
 
+import pytest
 from influxdb_client.client.exceptions import InfluxDBError
 
 from app.collector.client import KiddeDataset
@@ -304,3 +305,122 @@ class TestCloseClient:
         assert any(
             "closing the InfluxDB client" in r.getMessage() for r in caplog.records
         )
+
+
+class FakeAsyncClient:
+    """Stand-in for InfluxDBClientAsync covering ping/version/close outcomes."""
+
+    def __init__(self, *, ping=True, ping_raises=None, version_raises=None):
+        self._ping = ping
+        self._ping_raises = ping_raises
+        self._version_raises = version_raises
+        self.closed = False
+
+    async def ping(self):
+        if self._ping_raises is not None:
+            raise self._ping_raises
+        return self._ping
+
+    async def version(self):
+        if self._version_raises is not None:
+            raise self._version_raises
+        return "2.7.1"
+
+    def write_api(self):
+        return FakeWriteApi()
+
+    async def close(self):
+        self.closed = True
+
+
+class TestConstructorValidation:
+    """Config is validated in __init__ so a misconfigured collector never reaches connect()."""
+
+    @pytest.mark.parametrize(
+        "missing", ["INFLUXDB_URL", "INFLUXDB_TOKEN", "INFLUXDB_ORG", "INFLUXDB_BUCKET"]
+    )
+    def test_missing_required_parameter_raises(self, monkeypatch, missing):
+        monkeypatch.setattr(config, "INFLUXDB_URL", "http://influx:8086")
+        monkeypatch.setattr(config, "INFLUXDB_TOKEN", "token")
+        monkeypatch.setattr(config, "INFLUXDB_ORG", "org")
+        monkeypatch.setattr(config, "INFLUXDB_BUCKET", "bucket")
+        monkeypatch.setattr(config, missing, "")
+        with pytest.raises(ValueError, match="Missing required InfluxDB parameter"):
+            InfluxDBStorage()
+
+    def test_non_http_url_raises(self, monkeypatch):
+        """A bare host is the classic paste error — catch it at startup, not mid-write."""
+        monkeypatch.setattr(config, "INFLUXDB_URL", "influx:8086")
+        monkeypatch.setattr(config, "INFLUXDB_TOKEN", "token")
+        monkeypatch.setattr(config, "INFLUXDB_ORG", "org")
+        monkeypatch.setattr(config, "INFLUXDB_BUCKET", "bucket")
+        with pytest.raises(ValueError, match="Invalid InfluxDB URL format"):
+            InfluxDBStorage()
+
+
+class TestConnect:
+    def _patch_client(self, monkeypatch, fake):
+        monkeypatch.setattr(
+            "app.storage.influxdb.InfluxDBClientAsync", lambda **kwargs: fake
+        )
+
+    async def test_successful_connect_opens_the_write_api(self, monkeypatch):
+        fake = FakeAsyncClient()
+        self._patch_client(monkeypatch, fake)
+        s = _storage(monkeypatch)
+        await s.connect()
+        assert s.write_api is not None
+        assert not fake.closed
+
+    async def test_unreachable_server_exits_rather_than_limping_on(self, monkeypatch):
+        """ping() raising means the URL/port is wrong — fail fast at startup, loudly."""
+        fake = FakeAsyncClient(ping_raises=OSError("connection refused"))
+        self._patch_client(monkeypatch, fake)
+        s = _storage(monkeypatch)
+        with pytest.raises(SystemExit) as exc:
+            await s.connect()
+        assert exc.value.code == 1
+        assert fake.closed, "the half-open client must be released before exiting"
+
+    async def test_unhealthy_ping_exits(self, monkeypatch):
+        """A False ping is a live server that is not ready — equally fatal, not ignorable."""
+        fake = FakeAsyncClient(ping=False)
+        self._patch_client(monkeypatch, fake)
+        s = _storage(monkeypatch)
+        with pytest.raises(SystemExit) as exc:
+            await s.connect()
+        assert exc.value.code == 1
+        assert fake.closed
+
+    async def test_version_failure_does_not_abort_a_working_connection(
+        self, monkeypatch
+    ):
+        """version() is cosmetic log detail — ping() already proved the server is healthy."""
+        fake = FakeAsyncClient(version_raises=OSError("no version endpoint"))
+        self._patch_client(monkeypatch, fake)
+        s = _storage(monkeypatch)
+        await s.connect()
+        assert s.write_api is not None, "the connection must survive a cosmetic failure"
+
+
+class TestAgeSecondsNaive:
+    def test_naive_timestamp_is_assumed_utc(self):
+        """Kidde sometimes omits the zone; assuming UTC beats returning None for a real value."""
+        assert _age_seconds("2026-01-28T18:52:54") is not None
+
+    def test_future_timestamp_clamps_to_zero(self):
+        """Clock skew must not produce a negative age a dashboard would render as garbage."""
+        assert _age_seconds("2099-01-01T00:00:00Z") == 0.0
+
+
+class TestDebugLineProtocol:
+    async def test_points_are_dumped_as_line_protocol_at_debug(
+        self, monkeypatch, caplog
+    ):
+        """The debug dump is the operator's only view of what was actually sent."""
+        api = FakeWriteApi()
+        s = _storage(monkeypatch, api)
+        points = InfluxDBStorage._device_points(DEVICE, "Tyle")
+        with caplog.at_level(logging.DEBUG, logger="kidde_collector"):
+            await s._write(points)
+        assert any("kidde_collector_device" in r.getMessage() for r in caplog.records)
