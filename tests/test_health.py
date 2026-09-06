@@ -2,6 +2,8 @@ import importlib
 import os
 import time
 
+import pytest
+
 health = importlib.import_module("app.health.check")
 
 
@@ -101,3 +103,62 @@ class TestRecentCapture:
         assert ok is True
         reported = int(msg.split("update ")[1].split("s ago")[0])
         assert 115 <= reported <= 125
+
+
+class TestHealthcheckCLI:
+    """main() is the Docker HEALTHCHECK entrypoint — its exit code IS the container's health.
+
+    Docker reads only the exit code (0 healthy / non-zero unhealthy) and shows stdout in
+    `docker inspect .State.Health.Log`. Both halves are the contract, so both are asserted.
+    """
+
+    def test_exits_zero_and_reports_healthy_on_the_liveness_path(
+        self, monkeypatch, capsys
+    ):
+        monkeypatch.setenv("KIDDE_COLLECTOR_WRITE_API_DATA", "false")
+        with pytest.raises(SystemExit) as exc:
+            health.main()
+        assert exc.value.code == 0
+        out = capsys.readouterr().out
+        assert "HEALTHY" in out and "UNHEALTHY" not in out
+        assert "Process check" in out
+
+    def test_exits_one_when_the_capture_is_stale(self, tmp_path, monkeypatch, capsys):
+        """Capture mode with no capture file must fail the healthcheck, not pass it."""
+        monkeypatch.setenv("KIDDE_COLLECTOR_WRITE_API_DATA", "true")
+        monkeypatch.setattr(health, "OUTPUT_DIR", str(tmp_path))
+        with pytest.raises(SystemExit) as exc:
+            health.main()
+        assert exc.value.code == 1
+        assert "UNHEALTHY" in capsys.readouterr().out
+
+    def test_exits_zero_when_the_capture_is_fresh(self, tmp_path, monkeypatch, capsys):
+        f = tmp_path / "api_data_2026-09-05.jsonl"
+        f.write_text("{}\n")
+        monkeypatch.setenv("KIDDE_COLLECTOR_WRITE_API_DATA", "true")
+        monkeypatch.setattr(health, "OUTPUT_DIR", str(tmp_path))
+        monkeypatch.setattr(health, "MAX_AGE_SECONDS", 300)
+        with pytest.raises(SystemExit) as exc:
+            health.main()
+        assert exc.value.code == 0
+        assert "Capture freshness" in capsys.readouterr().out
+
+    def test_reports_the_build_version_for_the_operator(self, monkeypatch, capsys):
+        monkeypatch.setenv("KIDDE_COLLECTOR_WRITE_API_DATA", "false")
+        monkeypatch.setenv("KIDDE_COLLECTOR_VERSION", "2026.09.0")
+        monkeypatch.setenv("KIDDE_COLLECTOR_BUILD_TIMESTAMP", "2026-09-06T00:00:00Z")
+        with pytest.raises(SystemExit):
+            health.main()
+        assert "2026.09.0" in capsys.readouterr().out
+
+    def test_write_api_data_flag_is_case_insensitive(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        """The env var is operator-set text — "True" must select capture mode like "true"."""
+        monkeypatch.setenv("KIDDE_COLLECTOR_WRITE_API_DATA", "True")
+        monkeypatch.setattr(health, "OUTPUT_DIR", str(tmp_path / "absent"))
+        with pytest.raises(SystemExit) as exc:
+            health.main()
+        assert exc.value.code == 1, (
+            "capture mode must be selected, not the liveness path"
+        )
