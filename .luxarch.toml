@@ -6,3 +6,22 @@
 kind = "collector"
 app = "app"
 source_client = ["collector/session.py"]   # kidde's long-lived source session
+
+# --- opt-in overlays: decided, not merely absent -------------------------------
+#
+# [observability] — INTENTIONALLY EXEMPT (surfaced by luxarch 0.131.0's --plan, which
+# now lists un-adopted opt-in overlays so a pack can't stay invisible).
+#
+# The obs.* overlay turns on "when the repo ships telemetry" (--doc REFERENCE). This
+# collector ships none: zero opentelemetry / prometheus_client / tracing dependencies in
+# pyproject or poetry.lock, and no span/tracer call anywhere in app/. Its rules govern
+# span markers (create_service_span, record_exception_in_span), span-kind on client calls
+# and metric-label cardinality — all of which would have nothing to bind to here, so
+# enabling it would either red every rule against code that does not exist or force a
+# tracing layer to be invented purely to satisfy a guard. That is the hollow-green trade
+# ADR-004 warns about, taken from the other direction.
+#
+# The collector's operational signal is its structured/colored log stream
+# (app/utils/logging.py, KIDDE_COLLECTOR_STRUCTURED_LOGS) plus the InfluxDB series it
+# writes — a dashboard reads staleness from the data itself. Revisit and set
+# [observability].enabled = true if OpenTelemetry is ever added.

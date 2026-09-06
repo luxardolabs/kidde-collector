@@ -167,6 +167,23 @@ class TestGetClient:
         finally:
             await session.close()
 
+    async def test_non_401_http_error_returns_none(self, session, monkeypatch):
+        """A 500 from Kidde is not an auth problem, but it still must not kill the cycle."""
+        await session.connect()
+        monkeypatch.setattr(config, "KIDDE_USERNAME", "u")
+        monkeypatch.setattr(config, "KIDDE_PASSWORD", "p")
+
+        async def raise_500(*_args, **_kwargs):
+            raise aiohttp.ClientResponseError(
+                request_info=None, history=(), status=500, message="Server Error"
+            )
+
+        monkeypatch.setattr(KiddeClient, "from_login", raise_500)
+        try:
+            assert await session.get_client() is None
+        finally:
+            await session.close()
+
     async def test_unexpected_error_returns_none_not_raises(self, session, monkeypatch):
         """The resilience contract: a login blowing up skips the cycle, never kills the process."""
         await session.connect()
