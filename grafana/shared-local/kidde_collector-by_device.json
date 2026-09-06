@@ -2575,6 +2575,659 @@
       ],
       "title": "RSSI",
       "type": "row"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 55
+      },
+      "id": 22,
+      "panels": [],
+      "title": "Safety & Power",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "influxdb",
+        "uid": "${data_source}"
+      },
+      "description": "Alarm and power state per device \u2014 the safety surface the collector already stores but nothing displayed. Booleans use last(), not mean(): InfluxDB cannot aggregate a boolean field.\n\nCOLUMNS ARE LEGITIMATELY SPARSE \u2014 a blank cell means that model does not report that field, not that data is missing. Verified against live devices: co_alarm / battery_state / co_level / lost come from every unit; smoke_alarm and too_much_smoke only from smoke-capable units; battery_level, low_battery_alarm, end_of_life_alarm and peak_co_level only from battery-powered CO units.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "center",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Smoke Alarm"
+            },
+            "properties": [
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "false": {
+                        "color": "#4caf50",
+                        "index": 1,
+                        "text": "OK"
+                      },
+                      "true": {
+                        "color": "#F44034",
+                        "index": 0,
+                        "text": "ALARM"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CO Alarm"
+            },
+            "properties": [
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "false": {
+                        "color": "#4caf50",
+                        "index": 1,
+                        "text": "OK"
+                      },
+                      "true": {
+                        "color": "#F44034",
+                        "index": 0,
+                        "text": "ALARM"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Too Much Smoke"
+            },
+            "properties": [
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "false": {
+                        "color": "#4caf50",
+                        "index": 1,
+                        "text": "OK"
+                      },
+                      "true": {
+                        "color": "#F44034",
+                        "index": 0,
+                        "text": "ALARM"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Low Battery"
+            },
+            "properties": [
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "false": {
+                        "color": "#4caf50",
+                        "index": 1,
+                        "text": "OK"
+                      },
+                      "true": {
+                        "color": "#F44034",
+                        "index": 0,
+                        "text": "LOW"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "End of Life"
+            },
+            "properties": [
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "false": {
+                        "color": "#4caf50",
+                        "index": 1,
+                        "text": "OK"
+                      },
+                      "true": {
+                        "color": "#F44034",
+                        "index": 0,
+                        "text": "REPLACE"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Lost"
+            },
+            "properties": [
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "false": {
+                        "color": "#4caf50",
+                        "index": 1,
+                        "text": "OK"
+                      },
+                      "true": {
+                        "color": "#F44034",
+                        "index": 0,
+                        "text": "LOST"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Battery Level"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#F44034",
+                      "value": null
+                    },
+                    {
+                      "color": "#FFC107",
+                      "value": 20
+                    },
+                    {
+                      "color": "#4caf50",
+                      "value": 50
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CO Level"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "conppm"
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#4caf50",
+                      "value": null
+                    },
+                    {
+                      "color": "#FFC107",
+                      "value": 1
+                    },
+                    {
+                      "color": "#F44034",
+                      "value": 35
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Peak CO"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "conppm"
+              },
+              {
+                "id": "custom.align",
+                "value": "center"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Battery State"
+            },
+            "properties": [
+              {
+                "id": "custom.align",
+                "value": "center"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 56
+      },
+      "id": 23,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": false,
+            "displayName": "Device"
+          }
+        ]
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "alias": "$tag_label",
+          "datasource": {
+            "type": "influxdb",
+            "uid": "${data_source}"
+          },
+          "groupBy": [
+            {
+              "params": [
+                "label::tag"
+              ],
+              "type": "tag"
+            }
+          ],
+          "measurement": "kidde_collector_device",
+          "orderByTime": "ASC",
+          "policy": "default",
+          "refId": "A",
+          "resultFormat": "table",
+          "select": [
+            [
+              {
+                "params": [
+                  "smoke_alarm"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "last"
+              },
+              {
+                "params": [
+                  "Smoke Alarm"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "co_alarm"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "last"
+              },
+              {
+                "params": [
+                  "CO Alarm"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "too_much_smoke"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "last"
+              },
+              {
+                "params": [
+                  "Too Much Smoke"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "low_battery_alarm"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "last"
+              },
+              {
+                "params": [
+                  "Low Battery"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "end_of_life_alarm"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "last"
+              },
+              {
+                "params": [
+                  "End of Life"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "battery_state"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "last"
+              },
+              {
+                "params": [
+                  "Battery State"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "battery_level"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "last"
+              },
+              {
+                "params": [
+                  "Battery Level"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "co_level"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "last"
+              },
+              {
+                "params": [
+                  "CO Level"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "peak_co_level"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "last"
+              },
+              {
+                "params": [
+                  "Peak CO"
+                ],
+                "type": "alias"
+              }
+            ],
+            [
+              {
+                "params": [
+                  "lost"
+                ],
+                "type": "field"
+              },
+              {
+                "params": [],
+                "type": "last"
+              },
+              {
+                "params": [
+                  "Lost"
+                ],
+                "type": "alias"
+              }
+            ]
+          ],
+          "tags": [
+            {
+              "key": "label::tag",
+              "operator": "=~",
+              "value": "/^$label$/"
+            }
+          ]
+        }
+      ],
+      "title": "Safety & Power Status",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "includeByName": {},
+            "indexByName": {},
+            "renameByName": {
+              "label": "Device"
+            }
+          }
+        }
+      ],
+      "type": "table"
     }
   ],
   "refresh": "",
