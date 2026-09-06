@@ -17,8 +17,8 @@ Part of the Luxardo Labs collector fleet; follows the collector fleet standard w
 
 ```bash
 make demo-up      # fake Kidde endpoint + bundled InfluxDB + Grafana
-# Grafana http://localhost:3300 (admin/admin) — dashboards populate from the fake feed
-# Grafana is the only published port; override it if 3300 is taken:  GRAFANA_PORT=13400 make demo-up
+# Grafana http://localhost:3000 (admin/admin) — dashboards populate from the fake feed
+# Grafana is the only published port; override it if 3000 is taken:  GRAFANA_PORT=13400 make demo-up
 make demo-down
 ```
 

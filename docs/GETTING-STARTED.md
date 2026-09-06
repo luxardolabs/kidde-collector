@@ -16,11 +16,11 @@ The demo stack runs a built-in fake Kidde cloud plus a throwaway InfluxDB and Gr
 
 ```bash
 make demo-up
-# Grafana:  http://localhost:3300  (admin / admin)
+# Grafana:  http://localhost:3000  (admin / admin)
 make demo-down            # stop (add: make demo-clean to delete the data volumes)
 ```
 
-Grafana is the only service published to the host — InfluxDB stays on the compose network, so it can never collide. If 3300 is taken, override it: `GRAFANA_PORT=13400 make demo-up`.
+Grafana is the only service published to the host — InfluxDB stays on the compose network, so it can never collide. If port 3000 is already taken on your machine, override it: `GRAFANA_PORT=13400 make demo-up`.
 
 ## Path 2 — Real device data, self-contained (dev)
 
@@ -33,7 +33,7 @@ The dev stack polls your **real** Kidde account and stores it in a **bundled** I
    ```
 1. Start it:
    ```bash
-   make dev-up               # Grafana http://localhost:3300 (admin/admin)
+   make dev-up               # Grafana http://localhost:3000 (admin/admin)
    make dev-logs             # follow the collector
    make dev-down             # stop (make dev-clean also wipes data volumes)
    ```

@@ -71,7 +71,7 @@ LUXARCH_VERSION  ?= 0.141.0
 # luxlint ships from the PRIVATE registry only (never GHCR), so the host stays out of this
 # public repo exactly like LUXARCH_REGISTRY. Without it, `make lint`/`make format` skip.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  ?= 0.44.1
+LUXLINT_VERSION  ?= 0.44.2
 LUXLINT_IMAGE    := $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 
 # Dependency-vulnerability guard (luxaudit) — pinned; registry host comes from Makefile.local.
@@ -216,9 +216,9 @@ shell: ## Shell into the collector container
 
 ##@ Dev — full LOCAL stack (your real Kidde account + bundled InfluxDB + Grafana)
 
-dev-up: build-local ## Build locally + start the full dev stack (real Kidde account; Grafana http://localhost:3300)
+dev-up: build-local ## Build locally + start the full dev stack (real Kidde account; Grafana http://localhost:3000)
 	KIDDE_IMAGE=$(LOCAL_IMAGE) $(DEV_DC) up -d
-	@echo "kidde-collector [dev] — Grafana http://localhost:$(or $(GRAFANA_PORT),3300) (admin/admin)"
+	@echo "kidde-collector [dev] — Grafana http://localhost:$(or $(GRAFANA_PORT),3000) (admin/admin)"
 
 dev-down: ## Stop the dev stack (keep data volumes)
 	$(DEV_DC) down
@@ -286,7 +286,7 @@ prod-rollback: check-prod-node ## List image tags cached on the node for rollbac
 
 demo-up: build-local ## Bring up the demo stack — FAKE Kidde endpoint + auto-provisioned InfluxDB + Grafana
 	KIDDE_IMAGE=$(LOCAL_IMAGE) $(DEMO_DC) up -d --build
-	@echo "Grafana:  http://localhost:$(or $(GRAFANA_PORT),3300)  (admin/admin)  — dashboards populate from the fake Kidde feed"
+	@echo "Grafana:  http://localhost:$(or $(GRAFANA_PORT),3000)  (admin/admin)  — dashboards populate from the fake Kidde feed"
 
 demo-down: ## Stop the demo stack (keep data volumes)
 	$(DEMO_DC) down
@@ -348,8 +348,8 @@ test: .test-image.stamp ## Canonical pytest suite + coverage ratchet: lock-built
 	  -v $(PWD)/app:/app/app:ro -v $(PWD)/tests:/app/tests:ro \
 	  -v $(PWD)/harness:/app/harness:ro \
 	  -v $(PWD)/.luxlint.pytest.ini:/cfg/pytest.ini:ro $(TEST_IMAGE) \
-	  pytest -c /cfg/pytest.ini -p no:cacheprovider tests -q \
-	    --cov=app --cov-report=term-missing > .coverage.out 2>&1; \
+	  sh -c 'COVERAGE_CORE=sysmon pytest -c /cfg/pytest.ini -p no:cacheprovider tests -q \
+	    --cov=app --cov-report=term-missing' > .coverage.out 2>&1; \
 	rc=$$?; cat .coverage.out; \
 	rm -f .luxlint.pytest.ini; \
 	if [ $$rc -ne 0 ]; then rm -f .coverage.out; exit $$rc; fi; \

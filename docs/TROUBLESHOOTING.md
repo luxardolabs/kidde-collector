@@ -35,9 +35,9 @@ Kidde keeps unresponsive devices in the account and returns their **frozen last-
 
 That's an offline device with `SKIP_OFFLINE_MEASUREMENTS=false` — Kidde is returning the same frozen reading every cycle. Set it back to `true` (the default) to gap out offline devices instead.
 
-## Grafana's port is already in use
+## Grafana’s port (3000) is already in use
 
-Grafana is the **only** service published to the host — InfluxDB stays on the compose network, so it cannot collide. The default is `3300` (kidde's own port; the fleet keeps one per stack, e.g. kasa on 3100, luxsignal on 3200). If something else holds it:
+Grafana is the **only** service published to the host — InfluxDB stays on the compose network, so it cannot collide. The default is Grafana's own `3000`. If something else on your machine already holds it:
 
 ```bash
 GRAFANA_PORT=13400 make demo-up
