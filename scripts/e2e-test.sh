@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # End-to-end harness runner: fake Kidde endpoint -> collector -> InfluxDB, no hardware.
-# Brings up compose.e2e.yml, waits for the collector to authenticate, poll the location/
+# Brings up the e2e PROFILE of compose.yml, waits for the collector to authenticate, poll the location/
 # device REST API, and write device data to InfluxDB, then asserts it landed. Always
-# tears the stack down. Driven by `make test-e2e` (which builds + passes KIDDE_IMAGE).
+# tears the stack down. Driven by `make test-e2e`, which builds both images OUTSIDE
+# compose (build-local + harness-build) — compose only runs the tags.
 set -euo pipefail
 
-DC="docker compose -f compose.e2e.yml"
+DC="docker compose --env-file .env.e2e --profile e2e"
 TOKEN="kidde-e2e-token"
 MEASUREMENT="kidde_collector_device"
 # Device labels the fake serves — must reach the kidde_collector_device measurement.
@@ -15,8 +16,8 @@ TIMEOUT="${E2E_TIMEOUT:-120}"
 cleanup() { $DC down -v >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
-echo "▶ building fake Kidde + collector, starting e2e stack (KIDDE_IMAGE=${KIDDE_IMAGE:-default})…"
-$DC up -d --build
+echo "▶ starting e2e stack (images built outside compose)…"
+$DC up -d
 
 # Query InfluxDB (InfluxQL over the v1-compat API) from inside the influx container.
 influx_query() {

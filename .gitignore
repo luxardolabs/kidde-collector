@@ -63,3 +63,9 @@ Thumbs.db
 
 # Transient coverage report consumed by luxlint --coverage-ratchet in `make test`
 .coverage.out
+
+# Claude Code hook session state (luxarch --emit hooks)
+.claude/.hooks-heartbeat
+.claude/.luxpm-ledger.json
+.claude/settings.json.bak
+.claude/.push-hold

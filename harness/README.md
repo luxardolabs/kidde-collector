@@ -19,7 +19,7 @@ The device JSON mirrors the real API: scalar attributes (`smoke_alarm`, `co_leve
 KIDDE_COLLECTOR_API_BASE_URL=http://<host>:8080/api/v4
 ```
 
-The demo (`compose.demo.yml`) and e2e (`compose.e2e.yml`) stacks wire this up automatically. Env knobs: `KIDDE_FAKE_PORT` (8080), `KIDDE_FAKE_LOCATION_ID` (356103), `KIDDE_FAKE_LOCATION_LABEL` (Fake Home).
+The `demo` and `e2e` profiles of `compose.yml` wire this up automatically (the image is built by `make harness-build`, outside compose). Env knobs: `KIDDE_FAKE_PORT` (8080), `KIDDE_FAKE_LOCATION_ID` (356103), `KIDDE_FAKE_LOCATION_LABEL` (Fake Home).
 
 ## Run standalone
 

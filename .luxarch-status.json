@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.192.1",
+  "guard_version": "0.192.2",
   "repo": "/repo",
   "targets": [
     {
@@ -156,9 +156,9 @@
       },
       {
         "rule": "repo.guard_upgrade_verifies_write",
-        "status": "FAIL",
+        "status": "PASS",
         "since": "0.192.0",
-        "violations": 1,
+        "violations": 0,
         "deferred": false,
         "inert": false,
         "inert_reason": ""
@@ -201,9 +201,9 @@
       },
       {
         "rule": "repo.github_release_wired",
-        "status": "FAIL",
+        "status": "PASS",
         "since": "0.150.0",
-        "violations": 1,
+        "violations": 0,
         "deferred": false,
         "inert": false,
         "inert_reason": ""
@@ -219,21 +219,21 @@
       },
       {
         "rule": "repo.hooks_wired",
-        "status": "FAIL",
+        "status": "PASS",
         "since": "0.154.0",
-        "violations": 1,
+        "violations": 0,
         "deferred": false,
         "inert": false,
         "inert_reason": ""
       },
       {
         "rule": "repo.hooks_current",
-        "status": "INERT",
+        "status": "PASS",
         "since": "0.164.0",
         "violations": 0,
         "deferred": false,
-        "inert": true,
-        "inert_reason": "no `.claude/hooks/` \u2014 nothing installed to be stale. `repo.hooks_wired` owns whether the set should be there at all; this rule only checks that what IS there is current."
+        "inert": false,
+        "inert_reason": ""
       },
       {
         "rule": "repo.allowlist_wellformed",
@@ -273,9 +273,9 @@
       },
       {
         "rule": "repo.compose_conventions",
-        "status": "FAIL",
+        "status": "PASS",
         "since": "0.37.0",
-        "violations": 6,
+        "violations": 0,
         "deferred": false,
         "inert": false,
         "inert_reason": ""
@@ -399,20 +399,20 @@
       }
     ],
     "summary": {
-      "PASS": 29,
-      "FAIL": 4,
+      "PASS": 34,
+      "FAIL": 0,
       "XFAIL": 0,
       "XPASS": 0,
-      "INERT": 3
+      "INERT": 2
     }
   },
   "summary": {
-    "PASS": 35,
-    "FAIL": 4,
+    "PASS": 40,
+    "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
-    "INERT": 3
+    "INERT": 2
   },
-  "commit": "bde1ea595a47e9b23d52497b7ef4058c8cf851e1",
-  "generated_at": "2026-09-20T05:12:18Z"
+  "commit": "a0136fd2045f634a25ef09c405f6008cd356d4ba",
+  "generated_at": "2026-09-20T05:28:27Z"
 }

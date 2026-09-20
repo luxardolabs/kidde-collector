@@ -20,7 +20,12 @@ DEV_IMAGE     := $(REGISTRY)/$(IMAGE_NAME):dev
 VERSION_IMAGE := $(REGISTRY)/$(IMAGE_NAME):$(VERSION)
 IMAGE         := $(REGISTRY)/$(IMAGE_NAME):latest
 # Locally-built runtime image for the local stacks (up / dev / demo) — no registry needed.
-LOCAL_IMAGE   := kidde-collector:local
+# Locally-built images are tagged in the PUBLIC namespace under :local and never pushed,
+# so the committed .env.<env> files can name them without disclosing the private registry
+# host (which stays in the gitignored Makefile.local, for `make release` only).
+LOCAL_REGISTRY := ghcr.io
+LOCAL_IMAGE   := $(LOCAL_REGISTRY)/$(IMAGE_NAME):local
+FAKE_IMAGE    := $(LOCAL_REGISTRY)/$(IMAGE_NAME)-fake:local
 # Public OSS mirror. EXTERNAL_REGISTRY overridable (default GitHub Container Registry).
 EXTERNAL_REGISTRY ?= ghcr.io
 PUBLIC_IMAGE := $(EXTERNAL_REGISTRY)/luxardolabs/kidde-collector
@@ -65,7 +70,7 @@ RUFF_VERSION ?= 0.15.22
 
 # Architecture guard (luxarch) — pinned; registry host comes from Makefile.local (see above).
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.192.1
+LUXARCH_VERSION  := 0.192.2
 
 # Code-style + type standard (luxlint) — pinned; registry host comes from Makefile.local.
 # luxlint ships from the PRIVATE registry only (never GHCR), so the host stays out of this
@@ -85,16 +90,18 @@ LUXAUDIT_IMAGE    := $(LUXAUDIT_REGISTRY)/luxardolabs/luxaudit:$(LUXAUDIT_VERSIO
 POETRY_RUN := docker run --rm -u $(REPO_UID):$(REPO_GID) -e HOME=/tmp -v $(PWD):/work -w /work python:3.14-slim sh -c
 POETRY_PIP := python -m venv /tmp/v && /tmp/v/bin/pip install -q --root-user-action=ignore $(POETRY_SPEC)
 
-# Compose stacks (all .yml, short-form volumes). Four flavors:
-#   compose.yml       collector-only -> your external InfluxDB/Grafana (.env.dev / :dev)
-#   compose.prod.yml  collector-only -> external, prod (.env.prod / :latest)
-#   compose.dev.yml   full LOCAL dev stack: your real Kidde account + bundled InfluxDB+Grafana
-#   compose.demo.yml  DEMO: fake Kidde endpoint + bundled InfluxDB+Grafana (no account)
-#   compose.e2e.yml   hardware-free e2e test (fake Kidde + ephemeral InfluxDB) -> `make test-e2e`
-RUN_DC  := docker compose -f compose.yml --env-file .env.dev
-PROD_DC := docker compose -f compose.prod.yml --env-file .env.prod
-DEV_DC  := docker compose -f compose.dev.yml --env-file .env.demo
-DEMO_DC := docker compose -f compose.demo.yml --env-file .env.demo
+# ONE compose.yml (repo.compose_conventions). Stacks differ by PROFILE, environments by
+# .env.<env> — there are no per-env overlay files. Nothing is built by compose.
+#   (no profile)  collector-only -> your external InfluxDB (.env.dev) or prod (.env.prod)
+#   --profile dev    real Kidde account + bundled InfluxDB/Grafana  (.env.demo + .env.dev.local)
+#   --profile demo   fake Kidde endpoint + bundled InfluxDB/Grafana (.env.demo)
+#   --profile e2e    hardware-free e2e: fake Kidde + bundled InfluxDB (.env.e2e)
+DC      := docker compose
+RUN_DC  := $(DC) --env-file .env.dev
+PROD_DC := $(DC) --env-file .env.prod
+DEV_DC  := $(DC) --env-file .env.demo --profile dev
+DEMO_DC := $(DC) --env-file .env.demo --profile demo
+E2E_DC  := $(DC) --env-file .env.e2e --profile e2e
 
 # Remote prod deploy over SSH. Set the node explicitly (no fleet default).
 #   make prod-deploy PROD_NODE=collector01.example.com
@@ -112,8 +119,8 @@ PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
         demo-up demo-down demo-clean demo-logs demo-ps \
         check-prod-node prod-init prod-sync prod-deploy prod-status prod-logs-remote prod-health prod-rollback \
         poetry-lock poetry-update poetry-install \
-        test-build lint mypy format test arch audit test-e2e \
-        guard-version-check guard-upgrade honest check plan status \
+        test-build lint mypy format test arch audit test-e2e harness-build \
+        guard-version-check guard-upgrade honest check plan status github-release \
         gitleaks gitleaks-staged install-hooks clean clean-all
 
 .DEFAULT_GOAL := help
@@ -163,6 +170,10 @@ dev-build-push: ## Build + push :dev ONLY (tooling stage: dev deps + tests baked
 	docker push $(DEV_IMAGE)
 	@echo "Pushed $(DEV_IMAGE)"
 
+harness-build: ## Build the fake-Kidde emulator image from ./harness (outside compose, never pushed)
+	docker build $(NO_CACHE_FLAG) -t $(FAKE_IMAGE) ./harness
+	@echo "Built $(FAKE_IMAGE)"
+
 build-local: ## Build the runtime image from CURRENT source as a local tag (no push, no registry)
 	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(LOCAL_IMAGE) .
 
@@ -175,6 +186,21 @@ release: buildx-setup ## Build + push :$(VERSION) AND :latest (multi-arch) to th
 	docker buildx build $(NO_CACHE_FLAG) --target base --platform $(PLATFORMS) -f Dockerfile $(BUILD_ARGS) \
 		-t $(VERSION_IMAGE) -t $(IMAGE) --push .
 	@echo "Pushed $(VERSION_IMAGE) + $(IMAGE)"
+
+# The GitHub Release is where this repo's notes actually live — a git tag is NOT a Release,
+# and the LuxPM release record is the fleet INDEX, not this repo's record. Without this the
+# /releases page is empty and app/release_notes/$(VERSION).md goes unused. Enforced by
+# repo.github_release_wired; see luxarch --doc FLEET-RELEASE-PROCESS §9.
+github-release: ## Publish the GitHub Release for $(VERSION) from its committed release notes
+	@notes="app/release_notes/$(VERSION).md"; \
+	if [ ! -f "$$notes" ]; then echo "!! $$notes missing — write the release notes before cutting the Release"; exit 1; fi; \
+	if ! git rev-parse "v$(VERSION)" >/dev/null 2>&1; then echo "!! tag v$(VERSION) does not exist — tag and push it first"; exit 1; fi; \
+	if gh release view "v$(VERSION)" >/dev/null 2>&1; then \
+	  echo "GitHub Release v$(VERSION) already exists — updating its notes from $$notes"; \
+	  gh release edit "v$(VERSION)" --notes-file "$$notes"; \
+	else \
+	  gh release create "v$(VERSION)" --title "$(VERSION)" --notes-file "$$notes" --verify-tag; \
+	fi
 
 release-public: ## Promote the released :$(VERSION) + :latest (multi-arch) to GHCR by digest — run `make release` first
 	@docker buildx imagetools inspect $(VERSION_IMAGE) >/dev/null 2>&1 \
@@ -196,7 +222,7 @@ docker-clean: ## Remove local image tags (:dev, :$(VERSION), :latest, test image
 ##@ Collector-only — plug into your existing InfluxDB/Grafana (compose.yml, .env.dev)
 
 up: build-local ## Build locally + start the collector against YOUR external InfluxDB (edit .env.dev)
-	KIDDE_IMAGE=$(LOCAL_IMAGE) $(RUN_DC) up -d
+	$(RUN_DC) up -d
 	@echo "kidde-collector $(VERSION) running (collector only)"
 
 down: ## Stop the collector
@@ -217,7 +243,7 @@ shell: ## Shell into the collector container
 ##@ Dev — full LOCAL stack (your real Kidde account + bundled InfluxDB + Grafana)
 
 dev-up: build-local ## Build locally + start the full dev stack (real Kidde account; Grafana http://localhost:3000)
-	KIDDE_IMAGE=$(LOCAL_IMAGE) $(DEV_DC) up -d
+	$(DEV_DC) up -d
 	@echo "kidde-collector [dev] — Grafana http://localhost:$(or $(GRAFANA_PORT),3000) (admin/admin)"
 
 dev-down: ## Stop the dev stack (keep data volumes)
@@ -262,8 +288,8 @@ prod-init: check-prod-node ## One-time: create the output data dir on the node (
 	$(PROD_SSH) 'mkdir -p $(PROD_DIR)/output && chown -R 1000:1000 $(PROD_DIR)/output'
 	@printf "✓ output dir created on $(PROD_NODE)\n"
 
-prod-sync: check-prod-node ## Push compose.prod.yml + .env.prod to the node (repo is source of truth)
-	rsync -az --chown=1000:1000 compose.prod.yml .env.prod $(PROD_USER)@$(PROD_NODE):$(PROD_DIR)/
+prod-sync: check-prod-node ## Push compose.yml + .env.prod to the node (repo is source of truth)
+	rsync -az --chown=1000:1000 compose.yml .env.prod $(PROD_USER)@$(PROD_NODE):$(PROD_DIR)/
 	@printf "✓ synced config to $(PROD_NODE):$(PROD_DIR)\n"
 
 prod-deploy: check-prod-node ## Pull :latest + recreate the collector on the node (run release first)
@@ -284,8 +310,8 @@ prod-rollback: check-prod-node ## List image tags cached on the node for rollbac
 
 ##@ Demo / quickstart (self-contained: collector + InfluxDB + Grafana)
 
-demo-up: build-local ## Bring up the demo stack — FAKE Kidde endpoint + auto-provisioned InfluxDB + Grafana
-	KIDDE_IMAGE=$(LOCAL_IMAGE) $(DEMO_DC) up -d --build
+demo-up: build-local harness-build ## Bring up the demo stack — FAKE Kidde endpoint + auto-provisioned InfluxDB + Grafana
+	$(DEMO_DC) up -d
 	@echo "Grafana:  http://localhost:$(or $(GRAFANA_PORT),3000)  (admin/admin)  — dashboards populate from the fake Kidde feed"
 
 demo-down: ## Stop the demo stack (keep data volumes)
@@ -366,10 +392,8 @@ audit: ## Dependency-vuln scan via luxaudit (pinned; poetry.lock vs live OSV+PyP
 	  echo "luxaudit: LUXAUDIT_REGISTRY unset (see Makefile.local.example) — skipping audit"; \
 	else docker run --rm -v $(PWD):/repo $(LUXAUDIT_IMAGE); fi
 
-E2E_IMAGE := $(REGISTRY)/$(IMAGE_NAME):e2e
-test-e2e: ## Hardware-free end-to-end test: fake Kidde endpoint -> collector -> InfluxDB
-	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(E2E_IMAGE) .
-	KIDDE_IMAGE=$(E2E_IMAGE) ./scripts/e2e-test.sh
+test-e2e: build-local harness-build ## Hardware-free end-to-end test: fake Kidde endpoint -> collector -> InfluxDB
+	./scripts/e2e-test.sh
 
 guard-version-check: ## FATAL: fail the gate if any fleet guard pin is behind the published latest
 	@reg="$(LUXARCH_REGISTRY)"; \
@@ -384,19 +408,22 @@ guard-version-check: ## FATAL: fail the gate if any fleet guard pin is behind th
 	  else printf "✓ %-9s %s (latest)\n" "$$name" "$$pin"; fi; \
 	done; exit $$rc
 
-guard-upgrade: ## Bump every guard pin to the published latest (prints what newly bites)
+guard-upgrade:  ## Bump every guard pin to the published latest (prints what newly bites)
 	@reg="$(LUXARCH_REGISTRY)"; \
 	if [ -z "$$reg" ]; then echo "guard-upgrade: registry unset (Makefile.local) — skipping"; exit 0; fi; \
-	for gv in "luxarch LUXARCH_VERSION $(LUXARCH_VERSION)" "luxlint LUXLINT_VERSION $(LUXLINT_VERSION)" "luxaudit LUXAUDIT_VERSION $(LUXAUDIT_VERSION)"; do \
-	  set -- $$gv; name=$$1; var=$$2; old=$$3; \
-	  docker pull -q $$reg/luxardolabs/$$name:latest >/dev/null 2>&1 || true; \
-	  latest=$$(docker run --rm $$reg/luxardolabs/$$name:latest --version 2>/dev/null | awk '{print $$2}'); \
-	  [ -z "$$latest" ] && continue; \
-	  sed -i "s/^\($$var *\):= .*/\1:= $$latest/" Makefile; \
-	  if [ "$$name" = luxarch ] && [ -n "$$old" ] && [ "$$old" != "$$latest" ]; then \
-	    docker run --rm -v $(PWD):/repo $$reg/luxardolabs/luxarch:$$latest --new-rules --since $$old || true; \
-	  fi; \
-	done; echo "pins bumped — re-run make check"
+	for g in luxarch luxlint luxaudit; do \
+	  docker pull -q $$reg/luxardolabs/$$g:latest >/dev/null 2>&1 || true; \
+	  latest=$$(docker run --rm $$reg/luxardolabs/$$g:latest --version 2>/dev/null | awk '{print $$2}'); \
+	  var=$$(echo $$g | tr a-z A-Z)_VERSION; \
+	  old=$$(sed -n -E "s/^$$var[[:space:]]*:=[[:space:]]*//p" Makefile); \
+	  if [ -z "$$old" ]; then echo "!! no $$var pin found in Makefile — NOT bumped"; continue; fi; \
+	  if [ -z "$$latest" ]; then echo "!! could not read $$g:latest — $$var left at $$old"; continue; fi; \
+	  sed -i -E "s|^($$var[[:space:]]*:=[[:space:]]*).*|\1$$latest|" Makefile; \
+	  new=$$(sed -n -E "s/^$$var[[:space:]]*:=[[:space:]]*//p" Makefile); \
+	  if [ "$$new" != "$$latest" ]; then echo "!! $$var did NOT change (still $$new)"; exit 1; fi; \
+	  if [ "$$old" != "$$latest" ]; then echo "$$var $$old -> $$latest"; bumped=1; fi; \
+	  [ "$$g" = luxarch ] && [ "$$old" != "$$latest" ] && docker run --rm -v $(PWD):/repo $$reg/luxardolabs/luxarch:$$latest --new-rules --since $$old || true; \
+	done; [ -n "$$bumped" ] && echo "pins bumped — re-run make check" || echo "all pins already at latest"
 
 # HONESTY gate: a green `make check` must mean nothing was silently unchecked.
 #   luxarch --assert-scans : FAIL iff a rule family scanned ZERO files (a hollow green) — NOT on reds
