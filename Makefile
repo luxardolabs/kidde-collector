@@ -70,7 +70,7 @@ RUFF_VERSION ?= 0.15.22
 
 # Architecture guard (luxarch) — pinned; registry host comes from Makefile.local (see above).
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.192.2
+LUXARCH_VERSION  := 0.192.3
 
 # Code-style + type standard (luxlint) — pinned; registry host comes from Makefile.local.
 # luxlint ships from the PRIVATE registry only (never GHCR), so the host stays out of this
@@ -408,21 +408,23 @@ guard-version-check: ## FATAL: fail the gate if any fleet guard pin is behind th
 	  else printf "✓ %-9s %s (latest)\n" "$$name" "$$pin"; fi; \
 	done; exit $$rc
 
+# Canonical recipe, dropped in verbatim from `luxarch --emit guard-upgrade` — do not
+# hand-edit it. With REGISTRY unset (a contributor without Makefile.local) the pull and
+# --version both fail, `latest` is empty, and each guard reports "could not read" and is
+# left at its committed pin rather than being silently zeroed.
 guard-upgrade:  ## Bump every guard pin to the published latest (prints what newly bites)
-	@reg="$(LUXARCH_REGISTRY)"; \
-	if [ -z "$$reg" ]; then echo "guard-upgrade: registry unset (Makefile.local) — skipping"; exit 0; fi; \
-	for g in luxarch luxlint luxaudit; do \
-	  docker pull -q $$reg/luxardolabs/$$g:latest >/dev/null 2>&1 || true; \
-	  latest=$$(docker run --rm $$reg/luxardolabs/$$g:latest --version 2>/dev/null | awk '{print $$2}'); \
+	@for g in luxarch luxlint luxaudit; do \
+	  docker pull -q $(REGISTRY)/luxardolabs/$$g:latest >/dev/null 2>&1 || true; \
+	  latest=$$(docker run --rm $(REGISTRY)/luxardolabs/$$g:latest --version 2>/dev/null | awk '{print $$2}'); \
 	  var=$$(echo $$g | tr a-z A-Z)_VERSION; \
 	  old=$$(sed -n -E "s/^$$var[[:space:]]*:=[[:space:]]*//p" Makefile); \
 	  if [ -z "$$old" ]; then echo "!! no $$var pin found in Makefile — NOT bumped"; continue; fi; \
 	  if [ -z "$$latest" ]; then echo "!! could not read $$g:latest — $$var left at $$old"; continue; fi; \
-	  sed -i -E "s|^($$var[[:space:]]*:=[[:space:]]*).*|\1$$latest|" Makefile; \
+	  sed -i -E "s|^($$var[[:space:]]*:=[[:space:]]*).*|\\1$$latest|" Makefile; \
 	  new=$$(sed -n -E "s/^$$var[[:space:]]*:=[[:space:]]*//p" Makefile); \
 	  if [ "$$new" != "$$latest" ]; then echo "!! $$var did NOT change (still $$new)"; exit 1; fi; \
 	  if [ "$$old" != "$$latest" ]; then echo "$$var $$old -> $$latest"; bumped=1; fi; \
-	  [ "$$g" = luxarch ] && [ "$$old" != "$$latest" ] && docker run --rm -v $(PWD):/repo $$reg/luxardolabs/luxarch:$$latest --new-rules --since $$old || true; \
+	  [ "$$g" = luxarch ] && [ "$$old" != "$$latest" ] && docker run --rm -v $(PWD):/repo $(REGISTRY)/luxardolabs/luxarch:$$latest --new-rules --since $$old || true; \
 	done; [ -n "$$bumped" ] && echo "pins bumped — re-run make check" || echo "all pins already at latest"
 
 # HONESTY gate: a green `make check` must mean nothing was silently unchecked.
