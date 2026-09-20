@@ -13,14 +13,15 @@ ghcr.io/luxardolabs/kidde-collector:2026.09.0    # pinned (immutable per version
 
 Pin a specific `:<version>` in production so a deploy is reproducible; `:latest` always points at the newest release. The image runs as a non-root user (`appuser`, uid 1000) and has no build tooling in it.
 
-## The four run stacks
+## The run stacks (one compose.yml, five profiles)
 
-| Stack          | Compose file                         | Kidde source    | InfluxDB / Grafana        | Command              |
-| -------------- | ------------------------------------ | --------------- | ------------------------- | -------------------- |
-| collector-only | `compose.yml` (+ `compose.prod.yml`) | real            | external (yours)          | `make up` / `prod-*` |
-| dev            | `compose.dev.yml`                    | real            | bundled, auto-provisioned | `make dev-up`        |
-| demo           | `compose.demo.yml`                   | fake (emulator) | bundled, auto-provisioned | `make demo-up`       |
-| test           | `compose.e2e.yml`                    | fake            | ephemeral, no Grafana     | `make test-e2e`      |
+| Stack          | how it runs                           | source          | InfluxDB/Grafana          | make            |
+| -------------- | ------------------------------------- | --------------- | ------------------------- | --------------- |
+| collector-only | `--env-file .env.dev` (no profile)    | real            | external (yours)          | `make up`       |
+| prod           | `--env-file .env.prod` (no profile)   | real            | external (yours)          | `make prod-*`   |
+| dev            | `--env-file .env.demo --profile dev`  | real            | bundled, auto-provisioned | `make dev-up`   |
+| demo           | `--env-file .env.demo --profile demo` | fake (emulator) | bundled, auto-provisioned | `make demo-up`  |
+| test           | `--env-file .env.e2e --profile e2e`   | fake            | bundled, no Grafana       | `make test-e2e` |
 
 All stacks are `.yml`, run on the Docker bridge network (the Kidde API is a cloud endpoint — no host networking), and Compose never builds except the fake-Kidde harness in the demo/test stacks.
 
@@ -49,10 +50,10 @@ The `output/` volume holds the persisted session cookie (so restarts don't re-lo
 
 ## Option B — Docker Compose (collector-only)
 
-`compose.prod.yml` runs the published `:latest` against your external InfluxDB with `restart: always`:
+The no-profile stack of `compose.yml` runs the published image against your external InfluxDB. `.env.prod` pins the exact `TAG` — a deployable never rolls, so there is no `:latest` here:
 
 ```bash
-make prod-up                   # docker compose -f compose.prod.yml --env-file .env.prod pull && up -d
+make prod-up                   # docker compose --env-file .env.prod pull && up -d
 make prod-logs                 # follow
 make prod-ps                   # status
 make prod-down                 # stop
@@ -69,7 +70,7 @@ make release && make release-public
 # one-time: create the bind-mount data dir on the node (owned by uid 1000)
 make prod-init    PROD_NODE=collector01.example.com
 
-# push compose.prod.yml + .env.prod to the node (repo is the source of truth)
+# push compose.yml + .env.prod to the node (repo is the source of truth)
 make prod-sync    PROD_NODE=collector01.example.com
 
 # pull :latest and (re)create the container on the node
@@ -85,7 +86,7 @@ make prod-health       PROD_NODE=…   # run the in-container health check
 make prod-rollback     PROD_NODE=…   # list image tags cached on the node to roll back to
 ```
 
-The deploy dir on the node (`/opt/kidde-collector` by default) holds only `compose.prod.yml`, `.env.prod`, and the `output/` bind mount — never source.
+The deploy dir on the node (`/opt/kidde-collector` by default) holds only `compose.yml`, `.env.prod`, and the `output/` bind mount — never source.
 
 ## Health, restart, and data
 

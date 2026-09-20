@@ -55,16 +55,17 @@ python -m app.health.check   # container healthcheck
 
 Dependencies are managed with **Poetry** (`pyproject.toml` + committed `poetry.lock`); there is no `requirements.txt`.
 
-## The four run stacks
+## The run stacks (one compose.yml, five profiles)
 
 Distinguished by source (real vs fake Kidde) and observability (external vs bundled). All `.yml`, short-form volumes, on the **bridge network** (Kidde is a cloud API — no host networking). Compose never builds except the fake-Kidde service in demo/e2e.
 
-| Stack          | compose file                         | source          | InfluxDB/Grafana          | make                 |
-| -------------- | ------------------------------------ | --------------- | ------------------------- | -------------------- |
-| collector-only | `compose.yml` (+ `compose.prod.yml`) | real            | external (your fleet)     | `make up` / `prod-*` |
-| dev            | `compose.dev.yml`                    | real            | bundled, auto-provisioned | `make dev-up`        |
-| demo           | `compose.demo.yml`                   | fake (emulator) | bundled, auto-provisioned | `make demo-up`       |
-| test           | `compose.e2e.yml`                    | fake            | ephemeral, no Grafana     | `make test-e2e`      |
+| Stack          | how it runs                           | source          | InfluxDB/Grafana          | make            |
+| -------------- | ------------------------------------- | --------------- | ------------------------- | --------------- |
+| collector-only | `--env-file .env.dev` (no profile)    | real            | external (yours)          | `make up`       |
+| prod           | `--env-file .env.prod` (no profile)   | real            | external (yours)          | `make prod-*`   |
+| dev            | `--env-file .env.demo --profile dev`  | real            | bundled, auto-provisioned | `make dev-up`   |
+| demo           | `--env-file .env.demo --profile demo` | fake (emulator) | bundled, auto-provisioned | `make demo-up`  |
+| test           | `--env-file .env.e2e --profile e2e`   | fake            | bundled, no Grafana       | `make test-e2e` |
 
 ## Configuration
 

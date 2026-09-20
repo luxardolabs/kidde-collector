@@ -1,19 +1,33 @@
-name: kidde-collector
+name: ${COMPOSE_NAME:-kidde-collector}
 
-# Collector-only stack (fleet standard: compose never builds — it pulls the :dev
-# image the Makefile pushed, or a local build via KIDDE_IMAGE). Config/secrets live
-# in .env.dev (gitignored) — see .env.example. Kidde is a cloud API, so no host
-# networking / no published ports: the collector reaches OUT to Kidde + your InfluxDB.
-#   docker compose ps            # health in STATUS column
-#   docker inspect kidde-collector | jq '.[0].State.Health'
+# THE compose file — one per repo (repo.compose_conventions). Environments differ by
+# `.env.<env>`, variant stacks by `profiles:`. Nothing is built here: every image is built
+# outside compose (`make build-local` / `make release` / `make harness-build`) and this file
+# only RUNS a tag. See luxarch --doc FLEET-BUILD-DEPLOY-STANDARD / --playbook compose-hygiene.
+#
+#   docker compose --env-file .env.prod up -d                      # prod: collector only
+#   docker compose --env-file .env.dev  up -d                      # collector -> YOUR InfluxDB
+#   docker compose --env-file .env.demo --profile demo up -d       # fake Kidde + bundled stack
+#   docker compose --env-file .env.demo --profile dev  up -d       # REAL Kidde + bundled stack
+#   docker compose --env-file .env.e2e  --profile e2e  up -d       # hardware-free e2e
+#
+# The Makefile wraps all of these (`make up`, `make demo-up`, `make dev-up`, `make test-e2e`).
+# Kidde is a cloud API, so the collector publishes NO port — it reaches OUT to Kidde and OUT
+# to InfluxDB. Only Grafana publishes, because a human opens it in a browser.
 
 services:
+  # The collector runs in EVERY stack, so it carries no profile. What changes between
+  # stacks is configuration, and that lives in the `.env.<env>` named by ENV_FILE.
   kidde-collector:
+    image: ${REGISTRY:?set REGISTRY in your .env.<env>}/luxardolabs/kidde-collector:${TAG:?set TAG in your .env.<env>}
     container_name: kidde-collector
-    image: ${KIDDE_IMAGE:-ghcr.io/luxardolabs/kidde-collector:latest}
     env_file:
-      - .env.dev
-    restart: always
+      - ${ENV_FILE:?set ENV_FILE to this stack's .env.<env>}
+      # Your REAL Kidde account, for the dev stack only. Gitignored and optional —
+      # see .env.dev.local.example. Later file wins on shared keys.
+      - path: .env.dev.local
+        required: false
+    restart: ${RESTART_POLICY:-unless-stopped}
     healthcheck:
       test: ["CMD", "python3", "-m", "app.health.check"]
       interval: 30s
@@ -21,4 +35,75 @@ services:
       start_period: 30s
       retries: 3
     volumes:
-      - /mnt/docker/kidde-collector/output:/app/output
+      - ${OUTPUT_VOLUME:-kidde_collector_output}:/app/output
+
+  kidde_influxdb:
+    profiles: ["dev", "demo", "e2e"]
+    image: influxdb:2.7
+    container_name: kidde_influxdb
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USER}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      # A NAMED volume, never the image's implicit anonymous one
+      # (repo.compose_db_ephemeral_volume). `docker compose down -v` wipes it, which is
+      # what the e2e teardown does every run.
+      - kidde_influxdb_data:/var/lib/influxdb2
+      - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
+    # NO host port. The collector and Grafana both reach InfluxDB over the compose network
+    # (http://kidde_influxdb:8086), so publishing it only creates a fleet-wide collision —
+    # 8086 is owned by whichever collector stack came up first. To poke the API by hand,
+    # uncomment and use a port that is yours:
+    #   ports: ["${INFLUX_PORT:-18386}:8086"]
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  kidde_grafana:
+    profiles: ["dev", "demo"]
+    image: grafana/grafana:11.3.0
+    container_name: kidde_grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      INFLUX_BUCKET: ${INFLUX_BUCKET}
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/shared-local:/var/lib/grafana/dashboards:ro
+      - kidde_grafana_data:/var/lib/grafana
+    # Grafana IS published — a human opens it in a browser; that is the one thing here that
+    # genuinely needs a host port. 3000 is Grafana's universal default and that is what
+    # ships. If it is taken on YOUR machine (a lab host running several stacks), override
+    # GRAFANA_PORT locally — do not change what the project ships.
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      kidde_influxdb:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Fake Kidde cloud endpoint (the harness emulator) — no account, no hardware. Built
+  # OUTSIDE compose by `make harness-build`, then run here by tag.
+  kidde_fake:
+    profiles: ["demo", "e2e"]
+    image: ${REGISTRY:?}/luxardolabs/kidde-collector-fake:${TAG:?}
+    container_name: kidde_fake
+    environment:
+      KIDDE_FAKE_PORT: "8080"
+      KIDDE_FAKE_LOCATION_ID: "${KIDDE_FAKE_LOCATION_ID:-356103}"
+      KIDDE_FAKE_LOCATION_LABEL: "${KIDDE_FAKE_LOCATION_LABEL:-Demo Home}"
+    restart: unless-stopped
+
+volumes:
+  kidde_influxdb_data:
+  kidde_grafana_data:
+  kidde_collector_output:
