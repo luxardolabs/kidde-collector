@@ -1,6 +1,6 @@
 {
   "guard": "luxlint",
-  "guard_version": "0.44.2",
+  "guard_version": "0.55.0",
   "repo": "/repo",
   "source": [
     "app",
@@ -107,24 +107,27 @@
     },
     {
       "rule": "test.db_tested",
-      "status": "PASS",
+      "status": "INERT",
       "since": "0.3.0",
       "violations": 0,
-      "deferred": false
+      "deferred": false,
+      "inert_reason": "no relational data layer (no crud/ package, no models/ declaring an ORM model, no SQLAlchemy/psycopg/asyncpg dependency) \u2014 there is no data layer to exercise, so this says nothing about the repo either way. Adding a database to turn it green would be a hollow green; don't."
     },
     {
       "rule": "test.db_isolated",
-      "status": "PASS",
+      "status": "INERT",
       "since": "0.33.0",
       "violations": 0,
-      "deferred": false
+      "deferred": false,
+      "inert_reason": "no relational data layer \u2014 there is no test database to isolate and no dev/prod database a suite could accidentally reach, so the invariant was never evaluated."
     },
     {
       "rule": "test.no_handrolled_cleanup",
-      "status": "PASS",
+      "status": "INERT",
       "since": "0.36.0",
       "violations": 0,
-      "deferred": false
+      "deferred": false,
+      "inert_reason": "no relational data layer \u2014 there is no DB test harness, so there is no teardown strategy to judge."
     },
     {
       "rule": "docs.coverage",
@@ -156,12 +159,13 @@
     }
   ],
   "summary": {
-    "PASS": 21,
+    "PASS": 18,
     "FAIL": 0,
     "XFAIL": 0,
-    "XPASS": 0
+    "XPASS": 0,
+    "INERT": 3
   },
   "mypy": "separate: `luxlint --mypy` ([mypy].baseline ratchet)",
-  "commit": "f9aef755998e40335b94be7cfdf7023994b9c4df",
-  "generated_at": "2026-09-06T19:42:09Z"
+  "commit": "bde1ea595a47e9b23d52497b7ef4058c8cf851e1",
+  "generated_at": "2026-09-20T05:12:18Z"
 }

@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.141.0",
+  "guard_version": "0.192.1",
   "repo": "/repo",
   "targets": [
     {
@@ -137,6 +137,33 @@
         "inert_reason": ""
       },
       {
+        "rule": "repo.makefile_no_command_substitution",
+        "status": "PASS",
+        "since": "0.185.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.guard_pins_not_overridable",
+        "status": "PASS",
+        "since": "0.187.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.guard_upgrade_verifies_write",
+        "status": "FAIL",
+        "since": "0.192.0",
+        "violations": 1,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
         "rule": "repo.makefile_test_db_harness",
         "status": "INERT",
         "since": "0.102.0",
@@ -173,6 +200,60 @@
         "inert_reason": ""
       },
       {
+        "rule": "repo.github_release_wired",
+        "status": "FAIL",
+        "since": "0.150.0",
+        "violations": 1,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.release_tag_hygiene",
+        "status": "PASS",
+        "since": "0.151.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.hooks_wired",
+        "status": "FAIL",
+        "since": "0.154.0",
+        "violations": 1,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.hooks_current",
+        "status": "INERT",
+        "since": "0.164.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": true,
+        "inert_reason": "no `.claude/hooks/` \u2014 nothing installed to be stale. `repo.hooks_wired` owns whether the set should be there at all; this rule only checks that what IS there is current."
+      },
+      {
+        "rule": "repo.allowlist_wellformed",
+        "status": "PASS",
+        "since": "0.165.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
+        "rule": "repo.python_version_consistent",
+        "status": "PASS",
+        "since": "0.166.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
         "rule": "repo.schema_from_migrations",
         "status": "PASS",
         "since": "0.130.0",
@@ -192,9 +273,9 @@
       },
       {
         "rule": "repo.compose_conventions",
-        "status": "PASS",
+        "status": "FAIL",
         "since": "0.37.0",
-        "violations": 0,
+        "violations": 6,
         "deferred": false,
         "inert": false,
         "inert_reason": ""
@@ -281,6 +362,15 @@
         "inert_reason": ""
       },
       {
+        "rule": "repo.hatch_version_source_buildable",
+        "status": "PASS",
+        "since": "0.184.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": ""
+      },
+      {
         "rule": "repo.app_version_calver",
         "status": "PASS",
         "since": "0.50.0",
@@ -309,20 +399,20 @@
       }
     ],
     "summary": {
-      "PASS": 24,
-      "FAIL": 0,
+      "PASS": 29,
+      "FAIL": 4,
       "XFAIL": 0,
       "XPASS": 0,
-      "INERT": 2
+      "INERT": 3
     }
   },
   "summary": {
-    "PASS": 30,
-    "FAIL": 0,
+    "PASS": 35,
+    "FAIL": 4,
     "XFAIL": 0,
     "XPASS": 0,
-    "INERT": 2
+    "INERT": 3
   },
-  "commit": "f9aef755998e40335b94be7cfdf7023994b9c4df",
-  "generated_at": "2026-09-06T19:42:09Z"
+  "commit": "bde1ea595a47e9b23d52497b7ef4058c8cf851e1",
+  "generated_at": "2026-09-20T05:12:18Z"
 }
