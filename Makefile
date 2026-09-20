@@ -70,7 +70,7 @@ RUFF_VERSION ?= 0.15.22
 
 # Architecture guard (luxarch) — pinned; registry host comes from Makefile.local (see above).
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.192.3
+LUXARCH_VERSION  := 0.192.4
 
 # Code-style + type standard (luxlint) — pinned; registry host comes from Makefile.local.
 # luxlint ships from the PRIVATE registry only (never GHCR), so the host stays out of this
@@ -420,12 +420,16 @@ guard-upgrade:  ## Bump every guard pin to the published latest (prints what new
 	  old=$$(sed -n -E "s/^$$var[[:space:]]*:=[[:space:]]*//p" Makefile); \
 	  if [ -z "$$old" ]; then echo "!! no $$var pin found in Makefile — NOT bumped"; continue; fi; \
 	  if [ -z "$$latest" ]; then echo "!! could not read $$g:latest — $$var left at $$old"; continue; fi; \
+	  checked=1; \
 	  sed -i -E "s|^($$var[[:space:]]*:=[[:space:]]*).*|\\1$$latest|" Makefile; \
 	  new=$$(sed -n -E "s/^$$var[[:space:]]*:=[[:space:]]*//p" Makefile); \
 	  if [ "$$new" != "$$latest" ]; then echo "!! $$var did NOT change (still $$new)"; exit 1; fi; \
 	  if [ "$$old" != "$$latest" ]; then echo "$$var $$old -> $$latest"; bumped=1; fi; \
 	  [ "$$g" = luxarch ] && [ "$$old" != "$$latest" ] && docker run --rm -v $(PWD):/repo $(REGISTRY)/luxardolabs/luxarch:$$latest --new-rules --since $$old || true; \
-	done; [ -n "$$bumped" ] && echo "pins bumped — re-run make check" || echo "all pins already at latest"
+	done; \
+	if [ -n "$$bumped" ]; then echo "pins bumped — re-run make check"; \
+	elif [ -n "$$checked" ]; then echo "all pins already at latest"; \
+	else echo "!! could not reach the registry — NO pin was checked; currency NOT established"; exit 1; fi
 
 # HONESTY gate: a green `make check` must mean nothing was silently unchecked.
 #   luxarch --assert-scans : FAIL iff a rule family scanned ZERO files (a hollow green) — NOT on reds
