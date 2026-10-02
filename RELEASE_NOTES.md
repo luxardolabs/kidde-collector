@@ -4,9 +4,10 @@ Operator-facing release notes live in **[`app/release_notes/`](app/release_notes
 
 These describe what someone running this collector would actually notice. For the technical record — issue IDs, refactors, deploy steps — see **[CHANGELOG.md](CHANGELOG.md)**.
 
-| Version                                     | Highlights                                                            |
-| ------------------------------------------- | --------------------------------------------------------------------- |
-| [2026.09.0](app/release_notes/2026.09.0.md) | Smoke/CO/battery on the dashboards, security update, health-check fix |
+| Version                                     | Highlights                                                                  |
+| ------------------------------------------- | --------------------------------------------------------------------------- |
+| [2026.10.0](app/release_notes/2026.10.0.md) | Security update (27 vulnerabilities closed), leaner image, one compose file |
+| [2026.09.0](app/release_notes/2026.09.0.md) | Smoke/CO/battery on the dashboards, security update, health-check fix       |
 
 Format: [`app/release_notes/writing-guide.md`](app/release_notes/writing-guide.md).
 
