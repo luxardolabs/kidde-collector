@@ -1,0 +1,13 @@
+format: luxpm-sync-receipt/1
+project: KIDDECOLLE
+repository_url: https://github.com/luxardolabs/kidde-collector
+issued_at: 2026-10-02T14:04:45+00:00
+last_activity_at: 2026-10-02T14:04:42+00:00
+stale_days: 14
+open: 0
+open_stale: 0
+closed_without_summary: 31
+open_escalations: 0
+last_known_commit: 942fe9d8be2ea76f24a9684287e7fe047349c2d3
+key_id: cbb673eafd0c3932
+signature: y9iRDIJmEYQa+b607w9Bj1SFR79e88JjWwjY9BB+S+W5084+CJM3SIW1w1Q4FJ7kohzJWbDOotDlkg6juqcGBw==
