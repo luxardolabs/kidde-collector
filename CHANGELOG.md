@@ -6,6 +6,7 @@ This is the internal record: what changed, why, the issue IDs it closed, and any
 
 | Version                                   | Notes                                                                                  |
 | ----------------------------------------- | -------------------------------------------------------------------------------------- |
+| [2026.10.0](app/change_logs/2026.10.0.md) | Shipped-image CVEs 27 → 0, one compose.yml, commit-identity scrub, guard catch-up      |
 | [2026.09.0](app/change_logs/2026.09.0.md) | Guard catch-up, 3 CVEs cleared, 4 fixes, coverage 41% → 99%, Safety & Power dashboards |
 
 Format: [`app/change_logs/writing-guide.md`](app/change_logs/writing-guide.md). Process: `luxarch --doc FLEET-RELEASE-PROCESS`.
