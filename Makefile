@@ -69,13 +69,13 @@ RUFF_VERSION ?= 0.15.22
 
 # Architecture guard (luxarch) — pinned; registry host comes from Makefile.local (see above).
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.248.0
+LUXARCH_VERSION  := 0.249.0
 
 # Code-style + type standard (luxlint) — pinned; registry host comes from Makefile.local.
 # luxlint ships from the PRIVATE registry only (never GHCR), so the host stays out of this
 # public repo exactly like LUXARCH_REGISTRY. Without it, `make lint`/`make format` skip.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  := 0.60.0
+LUXLINT_VERSION  := 0.60.1
 LUXLINT_IMAGE    := $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 
 # Dependency-vulnerability guard (luxaudit) — pinned; registry host comes from Makefile.local.
@@ -484,7 +484,7 @@ status: ## Regenerate the committed guard-status files (.lux*-status.json) — t
 # The asset reads the luxlint image as $(LUXLINT); the gitleaks mirror lives beside it.
 LUXLINT = $(LUXLINT_IMAGE)
 
-# luxarch:gitleaks asset v7 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit gitleaks`.
+# luxarch:gitleaks asset v8 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit gitleaks`.
 # ── The privacy gate: BOTH surfaces ─────────────────────────────────────────────────────────────
 # Emitted by `luxarch --emit gitleaks`. Drop in verbatim.
 #
@@ -528,8 +528,9 @@ GIT_IDENTITY_OK ?= <[^>]*users\.noreply\.github\.com>$$|<noreply@github\.com>$$
 GITLEAKS_IMAGE = $(dir $(LUXLINT))gitleaks:v8.30.1
 
 gitleaks: ## secret scan over FULL HISTORY + the commit-identity pass (the hooks cover commit/push)
-	@docker run --rm -v $(PWD):/repo $(LUXLINT) --emit-config gitleaks > /tmp/gl.toml
-	@docker run --rm -v $(PWD):/repo -v /tmp/gl.toml:/gl.toml:ro \
+	@set -e; C=$$(mktemp); trap 'rm -f "$$C"' EXIT INT TERM; \
+	docker run --rm -v $(PWD):/repo $(LUXLINT) --emit-config gitleaks > "$$C"; \
+	docker run --rm -v $(PWD):/repo -v "$$C":/gl.toml:ro -w /repo \
 	  $(GITLEAKS_IMAGE) git /repo -c /gl.toml --redact -v
 	@# The identity pass — the half gitleaks structurally cannot do. Cheap: one `git log`.
 	@# Walks what THIS repo publishes (branches, tags, HEAD), NOT `--all`: a remote-tracking ref caches the
@@ -555,9 +556,16 @@ gitleaks: ## secret scan over FULL HISTORY + the commit-identity pass (the hooks
 # v7: `-w /repo` is LOAD-BEARING. Without it git runs outside the repo, falls back to `git diff
 # --no-index`, rejects `--staged`, and gitleaks EXITS 0: v6 let a staged secret through while printing
 # a git error (measured on a planted GitHub token: v6 exit 0, v7 "leaks found: 1" exit 1).
+# v8: the denylist goes to a PER-RUN `mktemp` file, removed on exit (LUXHELIX-128). v7 wrote a fixed
+# `/tmp/gl.toml` that outlived the run: on a host where commit and push run as different users, the
+# next user's redirect was refused (`fs.protected_regular=1`, the Fedora default, blocks O_CREAT on
+# another user's file in sticky /tmp even for root), so the privacy gate failed every commit or push
+# after a user switch (2 of 2 measured). Two repos scanning at once also shared one file, so one could
+# scan with the other's carve-outs. The full-history scan now also passes `-w /repo`, like the staged one.
 gitleaks-staged: ## secret scan of the STAGED changes (run by hooks/pre-commit)
-	@docker run --rm -v $(PWD):/repo $(LUXLINT) --emit-config gitleaks > /tmp/gl.toml
-	@docker run --rm -v $(PWD):/repo -v /tmp/gl.toml:/gl.toml:ro -w /repo \
+	@set -e; C=$$(mktemp); trap 'rm -f "$$C"' EXIT INT TERM; \
+	docker run --rm -v $(PWD):/repo $(LUXLINT) --emit-config gitleaks > "$$C"; \
+	docker run --rm -v $(PWD):/repo -v "$$C":/gl.toml:ro -w /repo \
 	  $(GITLEAKS_IMAGE) protect --staged /repo -c /gl.toml --redact -v
 
 install-hooks: ## Activate the committed fleet secret hooks (core.hooksPath=hooks; pre-commit + pre-push)
