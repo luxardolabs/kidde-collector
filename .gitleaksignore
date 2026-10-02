@@ -8,27 +8,31 @@
 # every existing clone and the redirect. The CURRENT tree and all new commits are clean
 # and enforced (make gitleaks / gitleaks-staged with the canonical fleet denylist).
 # Fingerprints are commit:file:rule:line — they contain no secret/identity strings.
-1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:125
-1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:127
-1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:22
-1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:24
-1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:45
-1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:47
-1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:49
-1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:5
-1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:50
-1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:58
-1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:60
-1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:62
-1757b67845fc7a52bf7e2b338728c6eea6bee96e:README.md:luxardolabs-org-denylist:64
-5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:15
-5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:16
-5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:17
-5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:18
-5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:22
-5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:28
-5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:29
-5b353dca460c374c6f1d217db4f65a472a4e52f2:README.md:luxardolabs-org-denylist:5
-63d5dddde364f84bb6d746988b7a297a360dac70:README.md:luxardolabs-org-denylist:6
-9c20eb304f3f90988fc50044fbbbaf65ebca7342:grafana/shared/kidde_collector-by_device.json:luxardolabs-org-denylist:2677
-9c20eb304f3f90988fc50044fbbbaf65ebca7342:grafana/shared/kidde_collector-by_measurement.json:luxardolabs-org-denylist:3083
+# 2026-10-02: the commit-identity scrub (FLEET-ONBOARDING-STANDARD §2) rewrote ONLY the author
+# metadata of the 22 pre-transfer commits (the v2024.10.00 line, no common ancestor with main —
+# main was untouched); trees are byte-identical, and these fingerprints were remapped old->new SHA
+# via filter-repo's commit-map. Content findings are unchanged.
+c155a473ee4ab5bfaa73bd3cdbd121608167ffb4:README.md:luxardolabs-org-denylist:125
+c155a473ee4ab5bfaa73bd3cdbd121608167ffb4:README.md:luxardolabs-org-denylist:127
+c155a473ee4ab5bfaa73bd3cdbd121608167ffb4:README.md:luxardolabs-org-denylist:22
+c155a473ee4ab5bfaa73bd3cdbd121608167ffb4:README.md:luxardolabs-org-denylist:24
+c155a473ee4ab5bfaa73bd3cdbd121608167ffb4:README.md:luxardolabs-org-denylist:45
+c155a473ee4ab5bfaa73bd3cdbd121608167ffb4:README.md:luxardolabs-org-denylist:47
+c155a473ee4ab5bfaa73bd3cdbd121608167ffb4:README.md:luxardolabs-org-denylist:49
+c155a473ee4ab5bfaa73bd3cdbd121608167ffb4:README.md:luxardolabs-org-denylist:5
+c155a473ee4ab5bfaa73bd3cdbd121608167ffb4:README.md:luxardolabs-org-denylist:50
+c155a473ee4ab5bfaa73bd3cdbd121608167ffb4:README.md:luxardolabs-org-denylist:58
+c155a473ee4ab5bfaa73bd3cdbd121608167ffb4:README.md:luxardolabs-org-denylist:60
+c155a473ee4ab5bfaa73bd3cdbd121608167ffb4:README.md:luxardolabs-org-denylist:62
+c155a473ee4ab5bfaa73bd3cdbd121608167ffb4:README.md:luxardolabs-org-denylist:64
+c8bbdae6d3b6f7a4ac968a71a7fe6b6ff5098f9d:README.md:luxardolabs-org-denylist:15
+c8bbdae6d3b6f7a4ac968a71a7fe6b6ff5098f9d:README.md:luxardolabs-org-denylist:16
+c8bbdae6d3b6f7a4ac968a71a7fe6b6ff5098f9d:README.md:luxardolabs-org-denylist:17
+c8bbdae6d3b6f7a4ac968a71a7fe6b6ff5098f9d:README.md:luxardolabs-org-denylist:18
+c8bbdae6d3b6f7a4ac968a71a7fe6b6ff5098f9d:README.md:luxardolabs-org-denylist:22
+c8bbdae6d3b6f7a4ac968a71a7fe6b6ff5098f9d:README.md:luxardolabs-org-denylist:28
+c8bbdae6d3b6f7a4ac968a71a7fe6b6ff5098f9d:README.md:luxardolabs-org-denylist:29
+c8bbdae6d3b6f7a4ac968a71a7fe6b6ff5098f9d:README.md:luxardolabs-org-denylist:5
+7e140c88d532b9d41a21ca366f9d18504d9d3026:README.md:luxardolabs-org-denylist:6
+7e4069f25144fba5b1f395f91c0d58fe7e6fd963:grafana/shared/kidde_collector-by_device.json:luxardolabs-org-denylist:2677
+7e4069f25144fba5b1f395f91c0d58fe7e6fd963:grafana/shared/kidde_collector-by_measurement.json:luxardolabs-org-denylist:3083
