@@ -19,7 +19,9 @@ services:
   # The collector runs in EVERY stack, so it carries no profile. What changes between
   # stacks is configuration, and that lives in the `.env.<env>` named by ENV_FILE.
   kidde-collector:
-    image: ${REGISTRY:?set REGISTRY in your .env.<env>}/luxardolabs/kidde-collector:${TAG:?set TAG in your .env.<env>}
+    # REGISTRY set -> the pulled, registry-qualified release; REGISTRY empty -> the BARE local
+    # build (`make build-local`, never pushed — repo.image_name_declares_provenance).
+    image: ${REGISTRY:+${REGISTRY}/luxardolabs/}kidde-collector:${TAG:?set TAG in your .env.<env>}
     container_name: kidde-collector
     env_file:
       - ${ENV_FILE:?set ENV_FILE to this stack's .env.<env>}
@@ -95,7 +97,7 @@ services:
   # OUTSIDE compose by `make harness-build`, then run here by tag.
   kidde_fake:
     profiles: ["demo", "e2e"]
-    image: ${REGISTRY:?}/luxardolabs/kidde-collector-fake:${TAG:?}
+    image: ${REGISTRY:+${REGISTRY}/luxardolabs/}kidde-collector-fake:${TAG:?}
     container_name: kidde_fake
     environment:
       KIDDE_FAKE_PORT: "8080"

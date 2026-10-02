@@ -21,15 +21,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry with pip (pinned + hash-verified by pip) — not the piped remote installer.
-RUN pip install --no-cache-dir "poetry==$POETRY_VERSION"
+# It lives in its OWN venv so neither it nor its deps (virtualenv, dulwich, …) land in the
+# system site-packages the runtime stage copies; POETRY_VIRTUALENVS_CREATE=false still
+# installs the app's deps into the system interpreter.
+RUN python -m venv /opt/poetry \
+    && /opt/poetry/bin/pip install --no-cache-dir "poetry==$POETRY_VERSION"
 
 WORKDIR /app
 COPY pyproject.toml poetry.lock* ./
-RUN poetry install --no-root --only main
+RUN /opt/poetry/bin/poetry install --no-root --only main
 
 # ---- Stage 1b: builder-dev — add the dev group (ruff/mypy/pytest, pinned) ----
 FROM builder AS builder-dev
-RUN poetry install --no-root --with dev
+RUN /opt/poetry/bin/poetry install --no-root --with dev
 
 # ---- Stage 2: base — lean runtime image (prod) ------------------------------
 FROM python:3.14-slim AS base
@@ -40,13 +44,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # tzdata: the collector runs with TZ set (e.g. America/Chicago) and stamps daily
 # capture filenames / timestamps against IANA zones — python:*-slim ships no
 # /usr/share/zoneinfo. Kidde uses standard IANA zone names, so tzdata-legacy is
-# NOT needed here.
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata \
+# NOT needed here. `apt-get upgrade` picks up the Debian security fixes released since the
+# base image was cut (luxaudit's image leg scans what ships).
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages + console scripts from the builder (main deps only)
 COPY --from=builder /usr/local/lib/python3.14/site-packages/ /usr/local/lib/python3.14/site-packages/
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
+
+# Nothing runs pip at runtime, and pip vendors urllib3/msgpack/setuptools copies that no
+# upgrade reaches — drop it from the shipped image.
+RUN python -m pip uninstall -y pip
 
 WORKDIR /app
 
