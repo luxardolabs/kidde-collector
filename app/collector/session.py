@@ -7,13 +7,15 @@ session) the poller drops the cookie file so the next cycle re-authenticates.
 
 import asyncio
 import json
+import logging
 
 import aiofiles
 import aiohttp
 
 from app.collector.client import KiddeClient, KiddeClientAuthError
 from app.core import config
-from app.utils.logging import logger
+
+logger = logging.getLogger(__name__)
 
 
 class KiddeSession:
@@ -64,20 +66,20 @@ class KiddeSession:
             logger.debug("KiddeClient authenticated successfully")
             return client
         except KiddeClientAuthError as auth_error:
-            logger.error("Kidde authentication error: %s", auth_error)
+            logger.exception("Kidde authentication error: %s", auth_error)
             return None
         except aiohttp.ClientResponseError as e:
             if e.status == 401:
-                logger.error("Unauthorized (401): check Kidde credentials.")
+                logger.exception("Unauthorized (401): check Kidde credentials.")
             else:
-                logger.error("HTTP error %s - %s", e.status, e.message)
+                logger.exception("HTTP error %s - %s", e.status, e.message)
             return None
         # swallowed-exceptions: a failed login must not kill the collector. Returning None
         # is the handled outcome — the caller skips this cycle and the poll loop retries on
         # the next interval (the documented resilience contract). The cause is logged at
-        # error level, so the failure is recorded, not lost.
+        # error level with its traceback, so the failure is recorded, not lost.
         except Exception as e:
-            logger.error("Failed to create Kidde client: %s", e)
+            logger.exception("Failed to create Kidde client: %s", e)
             return None
 
     async def load_cookies(self) -> dict[str, str] | None:
@@ -109,6 +111,6 @@ class KiddeSession:
             logger.info("Cleared cached Kidde cookies; will re-login next cycle")
         # swallowed-exceptions: best-effort cleanup. Failing to delete a cached cookie file
         # (read-only mount, permissions) must not abort the re-auth path it exists to enable
-        # — the next login simply overwrites it. Recorded at error level.
+        # — the next login simply overwrites it. Recorded at error level with its traceback.
         except Exception as e:
-            logger.error("Failed to clear cookies file: %s", e)
+            logger.exception("Failed to clear cookies file: %s", e)

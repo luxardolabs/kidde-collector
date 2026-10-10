@@ -9,8 +9,8 @@ import asyncio
 import contextlib
 import datetime
 import json
+import logging
 import time
-import traceback
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -21,7 +21,8 @@ from app.collector.client import KiddeClientAuthError
 from app.collector.session import KiddeSession
 from app.core import config
 from app.storage.influxdb import InfluxDBStorage
-from app.utils.logging import logger
+
+logger = logging.getLogger(__name__)
 
 
 class KiddeCollector:
@@ -33,7 +34,7 @@ class KiddeCollector:
         try:
             Path(config.EXPORT_FOLDER).mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            logger.error("Error creating export directory: %s", e)
+            logger.exception("Error creating export directory: %s", e)
             raise RuntimeError(f"Error creating export directory: {e}") from e
         logger.info("KiddeCollector initialized")
 
@@ -53,11 +54,11 @@ class KiddeCollector:
             # swallowed-exceptions: THE poll-loop resilience contract (CLAUDE.md: "the loop
             # continues despite individual failures"). One bad cycle — a Kidde outage, a
             # malformed payload — must not end the process; the next interval retries. The
-            # message is logged at error level with a full traceback at debug, so nothing
-            # vanishes silently. Re-raising here would exit the collector on any transient.
+            # error is logged with its traceback (the JSON line's `exception` field), so
+            # nothing vanishes silently. Re-raising here would exit the collector on any
+            # transient.
             except Exception as e:
-                logger.error("An error occurred: %s", e)
-                logger.debug("%s", traceback.format_exc())
+                logger.exception("An error occurred: %s", e)
 
             elapsed = time.monotonic() - start_time
             logger.info("Processing cycle completed in %.2f seconds", elapsed)

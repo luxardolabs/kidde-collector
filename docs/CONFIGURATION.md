@@ -71,10 +71,11 @@ Writes use the asyncio-native `InfluxDBClientAsync` (fleet ingestion standard): 
 
 ## Logging
 
-| Variable                          | Default | Description                                                                                                                                                                                                                        |
-| --------------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `KIDDE_COLLECTOR_LOG_LEVEL`       | `INFO`  | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR` \| `CRITICAL`.                                                                                                                                                                           |
-| `KIDDE_COLLECTOR_STRUCTURED_LOGS` | `false` | Emit single-line JSON logs for a log aggregator instead of the colored console format. Each record carries `timestamp` (UTC), `level`, `logger`, `message`, any `extra=` fields, and a serialized `exception` when one is present. |
+| Variable                    | Default | Description                                                                                                                                                                                                                                                                                                                  |
+| --------------------------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `KIDDE_COLLECTOR_LOG_LEVEL` | `INFO`  | `DEBUG` \| `INFO` \| `WARNING` \| `ERROR` \| `CRITICAL`.                                                                                                                                                                                                                                                                     |
+| `LOG_FORMAT`                | `json`  | Logs are one JSON object per line on stdout (the fleet logging module, `app/core/logging_config.py`): `timestamp` (UTC), `level`, `logger`, `message`, `service`, `version`, `module`/`function`/`line`, caller fields under `attributes`, and `exception` when present. Set `text` for a readable line at a local terminal. |
+| `LOG_MODULE_LEVELS`         | unset   | JSON object of per-logger levels applied on top, e.g. `{"app.storage.influxdb": "DEBUG"}`, to turn one module up without a rebuild.                                                                                                                                                                                          |
 
 ## Build provenance (set by the image, not by you)
 

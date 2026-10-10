@@ -11,7 +11,7 @@ from pathlib import Path
 
 # Module logger, never the root logger (ruff LOG015): a root-logger call implicitly
 # configures the root handler on first use, which hijacks logging for anything that
-# imports this module and bypasses the collector's own handler set up in app.utils.logging.
+# imports this module and bypasses the fleet handler app.core.logging_config installs.
 logger = logging.getLogger(__name__)
 
 
@@ -166,7 +166,6 @@ LIVENESS_FIELDS = ["last_seen", "lost", "offline", "contact_lost", "battery_stat
 
 # Logging
 LOG_LEVEL = get_env_log_level("KIDDE_COLLECTOR_LOG_LEVEL", "INFO")
-LOG_STRUCTURED = get_env_bool("KIDDE_COLLECTOR_STRUCTURED_LOGS", False)
 
 # Health check: max age (s) of the raw-capture file when capture is enabled
 HEALTH_CHECK_MAX_AGE = get_env_int(
@@ -205,5 +204,4 @@ def describe_settings() -> dict[str, str]:
         "KIDDE_COLLECTOR_SKIP_OFFLINE_MEASUREMENTS": str(SKIP_OFFLINE_MEASUREMENTS),
         "KIDDE_COLLECTOR_HEALTH_CHECK_MAX_AGE": str(HEALTH_CHECK_MAX_AGE),
         "KIDDE_COLLECTOR_LOG_LEVEL": LOG_LEVEL,
-        "KIDDE_COLLECTOR_STRUCTURED_LOGS": str(LOG_STRUCTURED),
     }

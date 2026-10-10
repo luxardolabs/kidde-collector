@@ -69,3 +69,6 @@ Thumbs.db
 .claude/.luxpm-ledger.json
 .claude/settings.json.bak
 .claude/.push-hold
+
+# Claude Code hook session state (luxarch --emit hooks)
+.claude/.luxpm-searched.json

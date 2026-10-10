@@ -27,7 +27,8 @@ from influxdb_client.client.write_api_async import WriteApiAsync
 
 from app.collector.client import KiddeDataset
 from app.core import config
-from app.utils.logging import logger
+
+logger = logging.getLogger(__name__)
 
 
 def _age_seconds(timestamp: Any) -> float | None:
@@ -93,14 +94,14 @@ class InfluxDBStorage:
             healthy = await self.client.ping()
         except Exception as e:
             await self._close_client()
-            logger.error("=" * 60)
-            logger.error("InfluxDB Connection Failed")
-            logger.error("Could not reach InfluxDB at: %s", self.url)
-            logger.error("Error: %s: %s", type(e).__name__, e)
-            logger.error(
-                "Verify InfluxDB is running, the URL/port are correct, and reachable."
+            # One record, traceback attached: a multi-line banner is six separate JSON lines.
+            logger.exception(
+                "InfluxDB connection failed: could not reach %s (%s: %s). Verify InfluxDB "
+                "is running, the URL/port are correct, and reachable.",
+                self.url,
+                type(e).__name__,
+                e,
             )
-            logger.error("=" * 60)
             raise SystemExit(1) from None
 
         if not healthy:
@@ -161,13 +162,13 @@ class InfluxDBStorage:
             logger.debug("Wrote %d points to InfluxDB", len(points))
         except InfluxDBError as e:
             self._log_write_error(e)
-        # swallowed-exceptions: a failed write is logged at error level and the cycle ends;
+        # swallowed-exceptions: a failed write is logged with its traceback and the cycle ends;
         # the poll loop retries on the next interval. This collector is a sampler, not a
         # ledger — points are re-derived every cycle, so a dropped batch self-heals rather
         # than being lost data needing a retry queue. InfluxDBError (auth/bucket) is handled
         # above with actionable guidance; this arm is the transport/unknown catch-all.
         except Exception as e:
-            logger.error("Error writing to InfluxDB: %s", e)
+            logger.exception("Error writing to InfluxDB: %s", e)
 
     @staticmethod
     def _log_write_error(error: InfluxDBError) -> None:

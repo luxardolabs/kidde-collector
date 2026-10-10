@@ -57,7 +57,7 @@ class TestValidateIntNoDefault:
 class TestCleartextUrlWarning:
     def test_warns_for_http_to_a_remote_host(self, caplog):
         """http:// to a remote host sends the InfluxDB token in the clear."""
-        with caplog.at_level(logging.WARNING, logger="kidde_collector"):
+        with caplog.at_level(logging.WARNING, logger="app.core.config"):
             config._warn_if_insecure_url(
                 "KIDDE_COLLECTOR_INFLUXDB_URL", "http://influx.example.com:8086"
             )
@@ -75,6 +75,6 @@ class TestCleartextUrlWarning:
     )
     def test_no_warning_for_local_or_tls(self, caplog, url):
         """Loopback and compose-internal hosts are not on the wire; https is encrypted."""
-        with caplog.at_level(logging.WARNING, logger="kidde_collector"):
+        with caplog.at_level(logging.WARNING, logger="app.core.config"):
             config._warn_if_insecure_url("KIDDE_COLLECTOR_INFLUXDB_URL", url)
         assert not [r for r in caplog.records if "cleartext" in r.getMessage()]

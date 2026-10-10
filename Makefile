@@ -69,13 +69,13 @@ RUFF_VERSION ?= 0.15.22
 
 # Architecture guard (luxarch) — pinned; registry host comes from Makefile.local (see above).
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.249.1
+LUXARCH_VERSION  := 0.276.0
 
 # Code-style + type standard (luxlint) — pinned; registry host comes from Makefile.local.
 # luxlint ships from the PRIVATE registry only (never GHCR), so the host stays out of this
 # public repo exactly like LUXARCH_REGISTRY. Without it, `make lint`/`make format` skip.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  := 0.60.1
+LUXLINT_VERSION  := 0.63.0
 LUXLINT_IMAGE    := $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 
 # Dependency-vulnerability guard (luxaudit) — pinned; registry host comes from Makefile.local.
@@ -84,7 +84,7 @@ LUXLINT_IMAGE    := $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 # it drops, no rebuild). Private registry only. Without the host, `make audit` skips. Same
 # out-of-tree pattern as LUXARCH_REGISTRY / LUXLINT_REGISTRY.
 LUXAUDIT_REGISTRY ?=
-LUXAUDIT_VERSION  := 0.12.0
+LUXAUDIT_VERSION  := 0.13.2
 LUXAUDIT_IMAGE    := $(LUXAUDIT_REGISTRY)/luxardolabs/luxaudit:$(LUXAUDIT_VERSION)
 POETRY_RUN := docker run --rm -u $(REPO_UID):$(REPO_GID) -e HOME=/tmp -v $(PWD):/work -w /work python:3.14-slim sh -c
 POETRY_PIP := python -m venv /tmp/v && /tmp/v/bin/pip install -q --root-user-action=ignore $(POETRY_SPEC)
@@ -119,7 +119,7 @@ PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
         check-prod-node prod-init prod-sync prod-deploy prod-status prod-logs-remote prod-health prod-rollback \
         poetry-lock poetry-update poetry-install \
         test-build lint mypy format test arch audit test-e2e harness-build \
-        guard-version-check guard-upgrade honest check plan status github-release \
+        guard-version-check guard-upgrade honest check plan status gh-release \
         gitleaks gitleaks-staged install-hooks clean clean-all
 
 .DEFAULT_GOAL := help
@@ -186,34 +186,100 @@ harness-build: ## Build the fake-Kidde emulator image from ./harness (outside co
 build-local: ## Build the runtime image from CURRENT source as a local tag (no push, no registry)
 	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(LOCAL_IMAGE) .
 
-version-build-push: ## Build + push :$(VERSION) ONLY (runtime base stage) to the private registry
-	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(VERSION_IMAGE) .
+# ── Release gates, shared by every target that pushes an immutable tag ──────────────────────────
+# A released version is never re-pushed (prod pins it), the tag names HEAD only if the tree is
+# clean (untracked files are in the build context), and the exact bits about to be pushed are
+# scanned first (luxaudit --image-archive). Same shape as luxarch's image block, multi-arch.
+CANDIDATE_IMAGE := $(REGISTRY)/$(IMAGE_NAME):candidate-$(COMMIT)
+
+define refuse_dirty_tree
+	@if [ -n "$$(git status --porcelain 2>/dev/null)" ]; then \
+	  echo "REFUSING: the working tree is dirty, so $(COMMIT) would not describe these bits:"; \
+	  git status --short | sed 's/^/    /'; \
+	  echo "Commit first, then release what you committed."; \
+	  exit 1; \
+	fi
+endef
+
+# Fails CLOSED: `manifest inspect` also exits 1 for an unreachable registry, so only the
+# registry's own not-found answer reads as unreleased.
+define refuse_released
+	@if docker manifest inspect $(1) >/dev/null 2>&1; then \
+	  echo "REFUSING: $(1) is already RELEASED. A released version is immutable: bump VERSION."; exit 1; \
+	fi
+	@out=$$(docker manifest inspect $(1) 2>&1) || case "$$out" in \
+	  *[Nn]"o such manifest"*|*"manifest unknown"*|*"not found"*) ;; \
+	  *) echo "REFUSING: cannot verify $(1) is unreleased: $$out"; exit 1 ;; \
+	esac
+endef
+
+# Scan a local image (the tag about to be pushed), mount-only; any fixable HIGH/CRITICAL refuses.
+define scan_candidate
+	@set -e; T=$$(mktemp); trap 'rm -f "$$T"' EXIT INT TERM; \
+	docker save $(1) -o "$$T"; chmod 644 "$$T"; \
+	docker run --rm -v $(PWD):/repo -v luxaudit-cache:/root/.cache/trivy -v "$$T":/candidate.tar:ro \
+	  $(LUXAUDIT_IMAGE) --image-archive /candidate.tar --image-label $(1)
+endef
+
+# Scan a PUSHED multi-arch image, every platform, before any release tag points at it.
+define scan_pushed
+	@set -e; T=$$(mktemp); trap 'rm -f "$$T"' EXIT INT TERM; \
+	for p in $(PLATFORMS); do \
+	  docker pull -q --platform $$p $(1) >/dev/null; \
+	  docker save $(1) -o "$$T"; chmod 644 "$$T"; \
+	  docker run --rm -v $(PWD):/repo -v luxaudit-cache:/root/.cache/trivy -v "$$T":/candidate.tar:ro \
+	    $(LUXAUDIT_IMAGE) --image-archive /candidate.tar --image-label "$(2) ($$p)"; \
+	done
+endef
+
+version-build-push: ## Build + scan + push :$(VERSION) ONLY (runtime base stage, host arch) to the private registry
+	$(call refuse_released,$(VERSION_IMAGE))
+	$(refuse_dirty_tree)
+	docker build --load $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(VERSION_IMAGE) .
+	$(call scan_candidate,$(VERSION_IMAGE))
 	docker push $(VERSION_IMAGE)
 	@echo "Pushed $(VERSION_IMAGE)"
 
-release: buildx-setup ## Build + push :$(VERSION) AND :latest (multi-arch) to the private registry
+# The cut release, multi-arch: build ONCE under a tag nothing pins, scan THAT image on every
+# platform, then promote BY DIGEST — the release tags name exactly the bits just scanned (a
+# rebuild between scan and push could not promise that; repo.release_scans_candidate).
+release: buildx-setup ## Cut VERSION: build + scan + push :$(VERSION) AND :latest (multi-arch), then the GitHub Release
+	$(call refuse_released,$(VERSION_IMAGE))
+	$(refuse_dirty_tree)
+	@t=$$(git rev-parse -q --verify "refs/tags/v$(VERSION)^{commit}" 2>/dev/null); \
+	if [ "$$t" != "$$(git rev-parse HEAD)" ]; then \
+	  echo "REFUSING: v$(VERSION) is not tagged at HEAD. Tag and push it first:"; \
+	  echo "    git tag -a v$(VERSION) -m v$(VERSION) && git push origin v$(VERSION)"; exit 1; \
+	fi
 	docker buildx build $(NO_CACHE_FLAG) --target base --platform $(PLATFORMS) -f Dockerfile $(BUILD_ARGS) \
-		-t $(VERSION_IMAGE) -t $(IMAGE) --push .
+		-t $(CANDIDATE_IMAGE) --push .
+	$(call scan_pushed,$(CANDIDATE_IMAGE),$(VERSION_IMAGE))
+	docker buildx imagetools create -t $(VERSION_IMAGE) -t $(IMAGE) $(CANDIDATE_IMAGE)
 	@echo "Pushed $(VERSION_IMAGE) + $(IMAGE)"
+	@$(MAKE) --no-print-directory gh-release
 
 # The GitHub Release is where this repo's notes actually live — a git tag is NOT a Release,
 # and the LuxPM release record is the fleet INDEX, not this repo's record. Without this the
 # /releases page is empty and app/release_notes/$(VERSION).md goes unused. Enforced by
-# repo.github_release_wired; see luxarch --doc FLEET-RELEASE-PROCESS §9.
-github-release: ## Publish the GitHub Release for $(VERSION) from its committed release notes
+# repo.github_release_wired; see luxarch --doc FLEET-RELEASE-PROCESS §9. Idempotent.
+gh-release: ## Publish the GitHub Release for $(VERSION) from its committed release notes (`release` runs it)
 	@notes="app/release_notes/$(VERSION).md"; \
 	if [ ! -f "$$notes" ]; then echo "!! $$notes missing — write the release notes before cutting the Release"; exit 1; fi; \
-	if ! git rev-parse "v$(VERSION)" >/dev/null 2>&1; then echo "!! tag v$(VERSION) does not exist — tag and push it first"; exit 1; fi; \
+	if ! git ls-remote --exit-code --tags origin "refs/tags/v$(VERSION)" >/dev/null 2>&1; then echo "!! tag v$(VERSION) is not on origin — tag and push it first"; exit 1; fi; \
 	if gh release view "v$(VERSION)" >/dev/null 2>&1; then \
-	  echo "GitHub Release v$(VERSION) already exists — updating its notes from $$notes"; \
-	  gh release edit "v$(VERSION)" --notes-file "$$notes"; \
+	  echo "GitHub Release v$(VERSION) already exists — skipped (a Release, like its tag, is immutable)"; \
 	else \
 	  gh release create "v$(VERSION)" --title "$(VERSION)" --notes-file "$$notes" --verify-tag; \
 	fi
 
+# Promote the released, already-scanned :$(VERSION) to GHCR by digest. It probes ITS destination
+# tag (a public :VERSION is immutable too) and re-scans the exact source it copies.
 release-public: ## Promote the released :$(VERSION) + :latest (multi-arch) to GHCR by digest — run `make release` first
+	$(call refuse_released,$(PUBLIC_IMAGE):$(VERSION))
+	$(refuse_dirty_tree)
 	@docker buildx imagetools inspect $(VERSION_IMAGE) >/dev/null 2>&1 \
 		|| { echo "$(VERSION_IMAGE) not found — run 'make release' before 'make release-public'"; exit 1; }
+	$(call scan_pushed,$(VERSION_IMAGE),$(PUBLIC_IMAGE):$(VERSION))
 	docker buildx imagetools create \
 		-t $(PUBLIC_IMAGE):$(VERSION) -t $(PUBLIC_IMAGE):latest \
 		$(VERSION_IMAGE)
@@ -374,22 +440,100 @@ format: ## Apply the CANONICAL fixer in place: ruff check --fix + ruff format + 
 	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping format"; \
 	else docker run --rm --user $(REPO_UID):$(REPO_GID) -v $(PWD):/repo $(LUXLINT_IMAGE) --format; fi
 
-test: .test-image.stamp ## Canonical pytest suite + coverage ratchet: lock-built deps image + over-mounted source (no :dev). Needs LUXLINT_REGISTRY.
-	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \
-	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping"; exit 0; \
-	fi; \
-	docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --emit-config pytest > .luxlint.pytest.ini; \
-	docker run --rm --network none -w /app \
-	  -v $(PWD)/app:/app/app:ro -v $(PWD)/tests:/app/tests:ro \
-	  -v $(PWD)/harness:/app/harness:ro \
-	  -v $(PWD)/.luxlint.pytest.ini:/cfg/pytest.ini:ro $(TEST_IMAGE) \
-	  sh -c 'COVERAGE_CORE=sysmon pytest -c /cfg/pytest.ini -p no:cacheprovider tests -q \
-	    --cov=app --cov-report=term-missing' > .coverage.out 2>&1; \
-	rc=$$?; cat .coverage.out; \
-	rm -f .luxlint.pytest.ini; \
-	if [ $$rc -ne 0 ]; then rm -f .coverage.out; exit $$rc; fi; \
-	docker run --rm -i -v $(PWD):/repo $(LUXLINT_IMAGE) --coverage-ratchet < .coverage.out; \
-	rc=$$?; rm -f .coverage.out; exit $$rc
+# Test-block settings: the suite runs against a REAL InfluxDB (compose service `kidde_influxdb_test`,
+# profile `test`), never a mock (repo.test_stack_parity). .env.e2e is committed and fills the
+# `${TAG:?}`/`${ENV_FILE:?}` interpolation compose does for every service, even unstarted ones.
+TEST_ENV_FILE := .env.e2e
+TEST_SERVICES := kidde_influxdb_test
+TEST_ENV := -e TEST_INFLUXDB_URL=http://kidde_influxdb_test:8086 -e TEST_INFLUXDB_TOKEN=kidde-test-token \
+            -e TEST_INFLUXDB_ORG=kidde -e TEST_INFLUXDB_BUCKET=kidde
+
+# luxarch:test-block asset v1 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit test-block`.
+# ── Test: THE suite, in the test image, against an isolated stack of real services ───────────────
+# Emitted by `luxarch --emit test-block`; paste below the image block (it uses TEST_IMAGE and
+# test-build from there). Enforced by `repo.test_block_wired`. Settings are `?=` defaults: set them
+# above this block. What the suite can see, and what only `make smoke` sees: --doc
+# FLEET-MAKEFILE-STANDARD §1.
+#
+# Before this block every repo wrote its own `make test`: four repos, four ways (a lint image with
+# the source mounted, the dev image with pytest pip-installed at run time, a repo script, a test
+# image), each with its own readiness loop and coverage wiring, and a coverage pipe under make's
+# /bin/sh that hid pytest's failure. This is the documented practice of the tools instead:
+#   - ISOLATED STACK (Docker Compose): the backing services run in a compose project of their own,
+#     one per run (`-p`), so parallel runs never collide, the suite cannot reach the dev database or
+#     cache at all (it is on another network), and teardown (`down --volumes --remove-orphans`)
+#     removes exactly this run's containers and data, pass or fail, never the dev stack.
+#   - READINESS from each service's own compose healthcheck (`up --wait`), not a sleep or a loop:
+#     the service declares when it is ready. For Postgres, probe over TCP with the real role
+#     (`pg_isready -h 127.0.0.1 -U <user> -d <db>`); over the socket it answers while initdb's
+#     temporary server is still up. `repo.test_stack_parity` checks these are the services prod runs.
+#   - Ctrl-C stops the suite (`--init` forwards the signal; a shell as PID 1 ignores it).
+#   - THE TEST IMAGE built from this source (`test-build`, the image's `--with dev` stage), with the
+#     fleet's pytest config (`luxlint --emit-config pytest`: -ra, strict markers and config,
+#     warnings are errors), readable by the image's non-root user. The source is mounted read-only
+#     and pytest writes no cache into it.
+#   - COVERAGE with coverage.py itself, not pytest-cov: `coverage run --branch` under the sysmon
+#     core (fast branch coverage on Python 3.14), data in /tmp, then `coverage report` judged by
+#     `luxlint --coverage-ratchet` against `[test].coverage_min` (off until you set a floor; it
+#     only ratchets up). `coverage` belongs in the dev dependency group.
+#   - BOTH EXIT CODES reach make: pytest's and the ratchet's. No pipe carries either. The ratchet
+#     reads coverage's own report file, never the suite's output (a printed `TOTAL … 100%` or
+#     pytest's `[100%]` would otherwise pass for a measurement), and a report that measured nothing
+#     fails.
+#   - Each run's project is named from its own `mktemp -d` token, and refuses to run without one (a
+#     PID repeats across containers and CI runners), and everything mounts the makefile's directory ($(CURDIR)), so `make -C` runs the
+#     right suite.
+
+# Setting: the compose command, and the profile holding the test services --------------------
+TEST_COMPOSE ?= docker compose
+TEST_PROFILE ?= test
+# Setting: the env file compose interpolates the file with (it reads EVERY service, so an app
+# service's `${TAG:?}` needs a value even when only the test services start) -----------------
+TEST_ENV_FILE ?= $(firstword $(wildcard .env.test .env.dev .env.example))
+# Setting: the backing services the suite needs (each with a healthcheck); empty: none -----------
+TEST_SERVICES ?= db-test
+# Setting: the suite's environment: the test services' URLs, by service name on the test network -
+TEST_ENV ?= -e TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@db-test:5432/postgres
+# Setting: where the suite runs from (a monorepo's apps/backend), and every package coverage
+# measures, comma-separated (`app,collector`): it replaces any [tool.coverage.run] source ---------
+TEST_WORKDIR ?= .
+TEST_COV ?= app
+# Setting: NONE. For a one-off run only, on the command line: `make test PYTEST_ARGS='-k orders'`.
+# A committed value narrows THE suite for everyone (`repo.test_block_wired` reds one) ---------
+PYTEST_ARGS ?=
+
+# One-off pytest arguments reach the container through the environment, never spliced into a quoted
+# command line (`-k 'a or b'` would otherwise split it).
+export PYTEST_ARGS
+
+test: test-build ## THE suite: test image, an isolated stack of real services, coverage ratchet
+	@set -u; \
+	D=$$(mktemp -d); tok=$$(basename "$$D" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9'); \
+	[ $${#tok} -ge 8 ] || { echo "REFUSING: could not make a unique name for this run"; rm -rf "$$D"; exit 2; }; \
+	run="t$$(printf '%s' '$(notdir $(CURDIR))' | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-')-test-$$tok"; \
+	dc="$(TEST_COMPOSE) -p $$run $(if $(TEST_ENV_FILE),--env-file $(TEST_ENV_FILE)) --profile $(TEST_PROFILE)"; \
+	chmod 777 "$$D"; \
+	trap '$$dc down --volumes --remove-orphans >/dev/null 2>&1; rm -rf "$$D"' EXIT INT TERM; \
+	net=; if [ -n "$(TEST_SERVICES)" ]; then \
+	  $$dc up -d --wait --wait-timeout 120 $(TEST_SERVICES) \
+	    || { echo "FAIL  the test services did not become healthy: $(TEST_SERVICES)"; exit 1; }; \
+	  cid=$$($$dc ps -q $(firstword $(TEST_SERVICES))); net=; \
+	  for n in $$(docker inspect -f '{{range $$k, $$v := .NetworkSettings.Networks}}{{$$k}} {{end}}' $$cid); do \
+	    [ "$$(docker network inspect -f '{{index .Labels "com.docker.compose.project"}}' $$n)" = "$$run" ] && { net=$$n; break; }; done; \
+	  [ -n "$$net" ] || { echo "FAIL  $(firstword $(TEST_SERVICES)) joined no network of this run's own project ($$run)"; exit 1; }; \
+	  net="--network $$net"; fi; \
+	docker run --rm -v $(CURDIR):/repo $(LUXLINT) --emit-config pytest > "$$D/pytest.ini" || exit 2; \
+	chmod 644 "$$D/pytest.ini"; \
+	docker run --rm --init $$net $(TEST_ENV) -e PYTEST_ADDOPTS="$${PYTEST_ARGS:-}" \
+	  -e COVERAGE_CORE=sysmon -e COVERAGE_FILE=/out/.coverage -e PYTHONDONTWRITEBYTECODE=1 \
+	  -v $(CURDIR):/repo:ro -v "$$D":/out -w /repo/$(TEST_WORKDIR) $(TEST_IMAGE) \
+	  sh -c 'python -m coverage run --branch --source=$(TEST_COV) -m pytest -c /out/pytest.ini --rootdir=. -p no:cacheprovider; s=$$?; python -m coverage report --show-missing > /out/coverage.txt; echo $$? > /out/coverage.rc; cat /out/coverage.txt; exit $$s'; \
+	rc=$$?; \
+	[ "$$rc" = 0 ] || { echo "FAIL  the suite failed (exit $$rc)"; exit 1; }; \
+	[ "$$(cat "$$D/coverage.rc" 2>/dev/null)" = 0 ] || { echo "FAIL  coverage measured nothing (coverage report: $$(tail -n 1 "$$D/coverage.txt" 2>/dev/null)): check TEST_COV names the package the suite imports"; exit 1; }; \
+	docker run --rm -i -v $(CURDIR):/repo $(LUXLINT) --coverage-ratchet < "$$D/coverage.txt" > "$$D/ratchet.txt"; crc=$$?; \
+	sed -n '/coverage ratchet/,$$p' "$$D/ratchet.txt"; \
+	[ "$$crc" = 0 ] || { echo "FAIL  the coverage ratchet failed (its verdict is above): add tests, never lower the floor"; exit 1; }
 
 arch: ## Architecture conformance via luxarch (pinned; reads .luxarch.toml). Needs LUXARCH_REGISTRY (Makefile.local).
 	@if [ -z "$(LUXARCH_REGISTRY)" ]; then \
@@ -418,10 +562,6 @@ guard-version-check: ## FATAL: fail the gate if any fleet guard pin is behind th
 	done; exit $$rc
 
 # luxarch:guard-upgrade asset v1 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit guard-upgrade`.
-# Canonical recipe, dropped in verbatim from `luxarch --emit guard-upgrade` — do not
-# hand-edit it. With REGISTRY unset (a contributor without Makefile.local) the pull and
-# --version both fail, `latest` is empty, and each guard reports "could not read" and is
-# left at its committed pin rather than being silently zeroed.
 guard-upgrade:  ## Bump every guard pin to the published latest (prints what newly bites)
 	@for g in luxarch luxlint luxaudit; do \
 	  docker pull -q $(REGISTRY)/luxardolabs/$$g:latest >/dev/null 2>&1 || true; \
@@ -484,7 +624,7 @@ status: ## Regenerate the committed guard-status files (.lux*-status.json) — t
 # The asset reads the luxlint image as $(LUXLINT); the gitleaks mirror lives beside it.
 LUXLINT = $(LUXLINT_IMAGE)
 
-# luxarch:gitleaks asset v8 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit gitleaks`.
+# luxarch:gitleaks asset v12 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit gitleaks`.
 # ── The privacy gate: BOTH surfaces ─────────────────────────────────────────────────────────────
 # Emitted by `luxarch --emit gitleaks`. Drop in verbatim.
 #
@@ -493,49 +633,78 @@ LUXLINT = $(LUXLINT_IMAGE)
 # scanner does not read. A repo reported `no leaks found` over 963 commits while 29 of them carried a
 # personal address in both the author and committer fields, and it would have reported exactly the
 # same thing after the scrub: identical output, opposite truth. Measured across the fleet, EIGHT
-# repos carry a personal address in history and two of them are PUBLIC (LUXTASTE-339).
-#
-# FLEET-ONBOARDING-STANDARD §2 uses one of those very addresses as its worked example of a leak the
-# full-history scan exists to catch. The standard named the leak and the gate could not see it.
+# repos carry a personal address in history and two of them are PUBLIC.
 
 # Commit identities this repo accepts. The fleet account's `users.noreply.github.com` address, plus
 # GitHub's own web-UI committer. Widen ONLY for a real outside contributor, with a comment saying who.
 # NOT for the org account's real address: a role mailbox in commit metadata is published with every
-# clone exactly like a personal one (six fleet repos carried it, one PUBLIC; OPENCLAIM-359). Its
+# clone exactly like a personal one (six fleet repos carried it, one PUBLIC). Its
 # omission here is the policy, not an oversight: the answer is the scrub printed below, and the
 # repo's agent performs it once the OWNER approves the force-push.
 # Anchored on the CLOSING BRACKET, because the compared line is `Name <email>` — not a bare
 # address. The first cut allowed `^noreply@github.com$$`, which can NEVER match a
 # `Name <email>` line, so the GitHub web-UI identity was silently DENIED and the canonical
 # recipe would have refused on any repo carrying a web-UI commit. Measured across the fleet: it
-# denied 4 of 6 distinct identity lines instead of the 3 real offenders (LUXTRMNL-21).
+# denied 4 of 6 distinct identity lines instead of the 3 real offenders.
 # It was missed because the only repo it was tested on has no web-UI commits, so the broken
 # branch never ran. The bracket also closes a substring hole: unanchored,
 # `<x@users.noreply.github.com.attacker.test>` would have been allowed.
-GIT_IDENTITY_OK ?= <[^>]*users\.noreply\.github\.com>$$|<noreply@github\.com>$$
+# v11: the noreply address is `<local@users.noreply.github.com>`, and the local part has no `@`. v10's
+# `<[^>]*users…` admitted `<dev.real@gmail.com.users.noreply.github.com>`, a real address in the clear.
+# v12: the fleet ACCOUNT, not any noreply address. v11 accepted `<anyone@users.noreply.github.com>`, so a
+# stranger's (or a second account's) noreply committer passed. Measured: the fleet's whole history holds
+# exactly two noreply identities, the fleet account and GitHub's web-UI committer.
+GIT_IDENTITY_OK ?= <214140984\+luxardolabs@users\.noreply\.github\.com>$$|<noreply@github\.com>$$
 
-# The secret scanner, PINNED and MIRRORED in the fleet registry (LUXASIF-29). The fleet bans a moving tag
+# The secret scanner, PINNED and MIRRORED in the fleet registry. The fleet bans a moving tag
 # everywhere it can see one, and this used to ship `ghcr.io/gitleaks/gitleaks:latest` inside the asset every
 # repo adopts verbatim: the privacy gate could not run with ghcr unreachable or the local copy pruned, and
 # nothing recorded which scanner said "no leaks found". New detection rules still arrive, through the fleet's
 # own mechanism: luxarch bumps this pin in a release, and `repo.emitted_assets_current` tells you to re-emit.
-# v5: the HOST is never written here (LUXSTATS-115). v4 inlined the private registry, so dropping
+# v5: the HOST is never written here. v4 inlined the private registry, so dropping
 # this asset in "verbatim" put the host into a committed Makefile, and on a public repo the fleet's
 # own gitleaks disclosure tier refused the commit. The mirror lives beside the guards, so the ref is
 # derived from wherever this repo already pulls luxlint (`$(LUXLINT)`, which the scan below needs
 # anyway). It works whichever variable holds your guard registry (REGISTRY, LUXARCH_REGISTRY, …).
 # Recursive `=` so it resolves at use, whatever order LUXLINT is defined in.
-GITLEAKS_IMAGE = $(dir $(LUXLINT))gitleaks:v8.30.1
+# v9: PINNED BY DIGEST, and buildable off-network. The digest is the scanner's identity; the registry is
+# only where it is fetched from. Beside a registry-qualified `$(LUXLINT)` it pulls the fleet mirror; with
+# a local guard build (`luxlint:local`, on a machine with no access to the fleet registry, such as an
+# airgapped laptop) it pulls the public image. v8 derived `./gitleaks:…` there, an unpullable reference, so the
+# privacy gate could not run at all. The mirror and the public image share the digest, so both
+# resolve to the same bits, and a tampered or re-tagged copy fails the pull instead of scanning.
+GITLEAKS_IMAGE = $(if $(findstring /,$(LUXLINT)),$(dir $(LUXLINT)),zricethezav/)gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
 
 gitleaks: ## secret scan over FULL HISTORY + the commit-identity pass (the hooks cover commit/push)
 	@set -e; C=$$(mktemp); trap 'rm -f "$$C"' EXIT INT TERM; \
 	docker run --rm -v $(PWD):/repo $(LUXLINT) --emit-config gitleaks > "$$C"; \
 	docker run --rm -v $(PWD):/repo -v "$$C":/gl.toml:ro -w /repo \
-	  $(GITLEAKS_IMAGE) git /repo -c /gl.toml --redact -v
+	  $(GITLEAKS_IMAGE) git /repo -c /gl.toml --redact -v --ignore-gitleaks-allow
+	@# v12: what `gitleaks git` never reads. It scans git's PATCHES, and git prints no patch for a file it
+	@# treats as binary: a NUL byte, UTF-16 (a `Localizable.strings`), or a `binary` / `-diff` attribute.
+	@# A token in any of them reached the remote with "no leaks found". So every path git ever showed as
+	@# binary is re-read as text, NULs stripped, and scanned by path (the config's path allowlists hold).
+	@set -e; C=$$(mktemp); D=$$(mktemp -d); trap 'rm -rf "$$C" "$$D"' EXIT INT TERM; \
+	docker run --rm -v $(PWD):/repo $(LUXLINT) --emit-config gitleaks > "$$C"; \
+	git -c core.quotePath=false log --branches --tags HEAD --format= -p --no-ext-diff --no-textconv \
+	  > "$$D/patches"; \
+	sed -n 's|^Binary files .* and b/\(.*\) differ$$|\1|p' "$$D/patches" | sort -u > "$$D/binary"; \
+	if [ -s "$$D/binary" ]; then \
+	  mkdir "$$D/t" "$$D/none"; \
+	  while IFS= read -r f; do \
+	    mkdir -p "$$D/t/$$(dirname "$$f")"; \
+	    git -c core.quotePath=false log --branches --tags HEAD --format= -p --text --no-ext-diff \
+	      --no-textconv -- "$$f" > "$$D/p"; \
+	    grep -a '^+' "$$D/p" | tr -d '\000' > "$$D/t/$$f"; \
+	  done < "$$D/binary"; \
+	  docker run --rm -v "$$D/t":/scan:ro -w /scan -v "$$D/none":/none:ro -v "$$C":/gl.toml:ro \
+	    $(GITLEAKS_IMAGE) dir . -c /gl.toml --redact -v --ignore-gitleaks-allow \
+	    --gitleaks-ignore-path /none; \
+	fi
 	@# The identity pass — the half gitleaks structurally cannot do. Cheap: one `git log`.
 	@# Walks what THIS repo publishes (branches, tags, HEAD), NOT `--all`: a remote-tracking ref caches the
 	@# remote's state, which during a scrub is by definition the un-rewritten history you are about to
-	@# force-push over — `--all` refused the verified fix, and any `git fetch` re-armed it (BOUTIQUE-577).
+	@# force-push over — `--all` refused the verified fix, and any `git fetch` re-armed it.
 	@bad=$$(git log --branches --tags HEAD --pretty='%an <%ae>%n%cn <%ce>' 2>/dev/null | sort -u \
 	  | grep -vE '$(GIT_IDENTITY_OK)' || true); \
 	if [ -n "$$bad" ]; then \
@@ -556,17 +725,33 @@ gitleaks: ## secret scan over FULL HISTORY + the commit-identity pass (the hooks
 # v7: `-w /repo` is LOAD-BEARING. Without it git runs outside the repo, falls back to `git diff
 # --no-index`, rejects `--staged`, and gitleaks EXITS 0: v6 let a staged secret through while printing
 # a git error (measured on a planted GitHub token: v6 exit 0, v7 "leaks found: 1" exit 1).
-# v8: the denylist goes to a PER-RUN `mktemp` file, removed on exit (LUXHELIX-128). v7 wrote a fixed
+# v8: the denylist goes to a PER-RUN `mktemp` file, removed on exit. v7 wrote a fixed
 # `/tmp/gl.toml` that outlived the run: on a host where commit and push run as different users, the
 # next user's redirect was refused (`fs.protected_regular=1`, the Fedora default, blocks O_CREAT on
 # another user's file in sticky /tmp even for root), so the privacy gate failed every commit or push
 # after a user switch (2 of 2 measured). Two repos scanning at once also shared one file, so one could
 # scan with the other's carve-outs. The full-history scan now also passes `-w /repo`, like the staged one.
+# v12: the staged bytes are read on the HOST and scanned as files, by path. v11 ran `protect --staged`
+# inside the container, which read `.git/index`, not the temporary index git hands the hook in
+# `$$GIT_INDEX_FILE`: `git commit -a` and `git commit <path>` were never scanned. It also read git's
+# patches, which skip binary, NUL, UTF-16 and `-diff` files, and it honoured a `# gitleaks:allow` on
+# the secret's own line and a committed `.gitleaksignore`, so a commit's author could waive their own
+# leak. New content gets no waiver: `.gitleaksignore` stays a ledger for the full-history scan only.
 gitleaks-staged: ## secret scan of the STAGED changes (run by hooks/pre-commit)
-	@set -e; C=$$(mktemp); trap 'rm -f "$$C"' EXIT INT TERM; \
+	@set -e; C=$$(mktemp); D=$$(mktemp -d); trap 'rm -rf "$$C" "$$D"' EXIT INT TERM; \
 	docker run --rm -v $(PWD):/repo $(LUXLINT) --emit-config gitleaks > "$$C"; \
-	docker run --rm -v $(PWD):/repo -v "$$C":/gl.toml:ro -w /repo \
-	  $(GITLEAKS_IMAGE) protect --staged /repo -c /gl.toml --redact -v
+	mkdir "$$D/t" "$$D/none"; \
+	git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR -z > "$$D/names"; \
+	tr '\000' '\n' < "$$D/names" | while IFS= read -r f; do \
+	  [ -n "$$f" ] || continue; \
+	  mkdir -p "$$D/t/$$(dirname "$$f")"; \
+	  git -c core.quotePath=false diff --cached --text --no-ext-diff --no-textconv -U0 -- "$$f" \
+	    > "$$D/p"; \
+	  grep -a '^+' "$$D/p" | tr -d '\000' > "$$D/t/$$f"; \
+	done; \
+	docker run --rm -v "$$D/t":/scan:ro -w /scan -v "$$D/none":/none:ro -v "$$C":/gl.toml:ro \
+	  $(GITLEAKS_IMAGE) dir . -c /gl.toml --redact -v --ignore-gitleaks-allow \
+	  --gitleaks-ignore-path /none
 
 install-hooks: ## Activate the committed fleet secret hooks (core.hooksPath=hooks; pre-commit + pre-push)
 	git config core.hooksPath hooks
@@ -578,6 +763,6 @@ clean: ## Clean python/test caches
 	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	rm -rf .pytest_cache/ .mypy_cache/ .ruff_cache/ .coverage htmlcov/
-	rm -f .test-image.stamp .luxlint.mypy.ini .luxlint.pytest.ini .ruff.local.toml .coverage.out
+	rm -f .test-image.stamp .luxlint.mypy.ini .ruff.local.toml
 
 clean-all: clean docker-clean ## Clean caches + local docker image tags

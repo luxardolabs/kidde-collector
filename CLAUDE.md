@@ -8,11 +8,13 @@ Kidde Collector is a **Python** headless data collector that bridges the **Kidde
 
 This is a Luxardo Labs fleet collector; it follows `/mnt/luxardolabs/COLLECTOR-FLEET-STANDARD.md` with **kasa-collector** as the reference implementation.
 
-<!-- luxarch:claude-pointer asset v4 - DO NOT edit this marker line; it is how repo.claude_pointer_present knows your copy is current. Re-emit with `luxarch --emit claude-pointer`. -->
+<!-- luxarch:claude-pointer asset v7 - DO NOT edit this marker line; it is how repo.claude_pointer_present knows your copy is current. Re-emit with `luxarch --emit claude-pointer`. -->
 
 ## How to work here (fleet conduct — read the standard, not just this block)
 
 **`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD` — read it in full before your first change.** It is the one home for *how* agents work in this fleet. This block is a pointer plus the handful of rules that get broken most; it is not a summary and does not replace reading it.
+
+**Run `/fleet-start` at the start of every session and after every compact.** It rehydrates from LuxPM and restates the session rules.
 
 **Report the result, not the mountain.** No "heavy", "multi-hour", "the big one", no narrating difficulty. Done + next in one line, with numbers.
 
@@ -21,9 +23,15 @@ This is a Luxardo Labs fleet collector; it follows `/mnt/luxardolabs/COLLECTOR-F
 - **Ask** — deleting anything; changing scope; a deferral/allowlist/exemption; publishing outward (pushing another repo, a force-push, a history rewrite); a genuine product fork where the choice is taste, not correctness.
 - **Do it** — aligning code to a ratified standard or a guard red; anything you have evidence for that is reversible in one commit. The standard already decided; say what you did.
 
+**Work the guard reds in `luxarch --plan` order. Never ask which family or sweep is next.** The order is decided. An escalation covers ONE site: its family keeps going.
+
+**An owner hold is exactly as wide as the owner said.** "Hold off on X" excludes X and nothing else. It is not permission to pause, ask, or check in about anything outside X. Skip the held family, say so in one line, and keep burning down the rest.
+
+**End every turn that worked guard reds with `reds: N (was M)`**, plus the held families by name. A turn that ends on a question while N > 0, outside an ask-class, is the failure this block exists to stop.
+
 When you do ask: **one decision per message**, the evidence that makes it answerable, your recommendation stated as one, and a question answerable in one word. **A recommendation that ends in a menu is not a recommendation** — if you rejected the alternatives, re-offering them asks the owner to redo your analysis.
 
-**Use the fleet skills; don't improvise the procedure.** `/wrap-up` before you call anything done (tests, every red in touched files, docs, gate, LuxPM closed out, all with evidence). `/pin-bump` to upgrade the guards. `/escalate` when a guard is wrong. `/release` to cut a release.
+**Use the fleet skills; don't improvise the procedure.** `/fleet-start` to open a session. `/wrap-up` before you call anything done (tests you saw fail before the fix, every red in touched files, docs, gate, LuxPM closed out, all with evidence). `/adversarial` to have an independent agent attack a change touching auth, tenancy, data, money, secrets or deploys. `/pin-bump` to upgrade the guards. `/escalate` when a guard is wrong. `/release` to cut a release.
 
 **You touched it, you own it.** Edit a file for any reason and it has a mypy, ruff or luxarch red: fix every one in that file, not just yours. Never spend time proving a red predates you; fix it. Test what you changed first. **Before fixing any mypy red, read `luxlint --playbook mypy-sweep` in full.**
 
@@ -49,7 +57,7 @@ make dev-up          # dev stack: real Kidde account + bundled InfluxDB + Grafan
 make lint            # luxlint: canonical ruff + the code-style/doc/secret-config checks (mount-only)
 make mypy            # luxlint type leg: mypy, fleet stubs baked (mount-only; its OWN gate step)
 make format          # THE canonical fixer, in place: ruff --fix + ruff format + markdown
-make test            # pytest suite (lock-built Dockerfile.test image + over-mounted source)
+make test            # THE suite (emitted test block): lock-built test image, a real InfluxDB per run, branch-coverage ratchet
 make arch            # luxarch: architecture conformance (pinned, mount-only)
 make audit           # luxaudit: dependency-CVE scan against the live OSV + PyPA feed
 make check           # THE fleet gate: guard-version-check honest lint mypy test arch audit gitleaks
@@ -64,7 +72,7 @@ python -m app.main
 python -m app.health.check   # container healthcheck
 ```
 
-Dependencies are managed with **Poetry** as the dependency manager; the **build backend is hatchling** and `VERSION` is the single version source (`dynamic = ["version"]`), so nothing else carries a version literal. There is no `requirements.txt`. `make lint`/`make mypy` are **mount-only** — they run inside the pinned luxlint image against the source, so the repo installs no ruff/mypy of its own; `make test` builds a lean image from `poetry.lock` and over-mounts CURRENT source (never exec into the baked container — stale code). Only **Grafana** is published to the host, on Grafana's default `3000` — InfluxDB stays on the compose network, so it can never collide. If 3000 is taken on your machine, override `GRAFANA_PORT` locally; the shipped default stays 3000.
+Dependencies are managed with **Poetry** as the dependency manager; the **build backend is hatchling** and `VERSION` is the single version source (`dynamic = ["version"]`), so nothing else carries a version literal. There is no `requirements.txt`. `make lint`/`make mypy` are **mount-only** — they run inside the pinned luxlint image against the source, so the repo installs no ruff/mypy of its own; `make test` builds a lean image from `poetry.lock`, starts a throwaway InfluxDB (`kidde_influxdb_test`, profile `test`) in its own compose project, and mounts CURRENT source read-only (never exec into the baked container — stale code). Only **Grafana** is published to the host, on Grafana's default `3000` — InfluxDB stays on the compose network, so it can never collide. If 3000 is taken on your machine, override `GRAFANA_PORT` locally; the shipped default stays 3000.
 
 ## Architecture Overview
 
@@ -80,7 +88,7 @@ A simple asyncio poll loop. `app/main.py` validates the environment, connects to
   - `poller.py` — `KiddeCollector` (the poll loop)
   - `endpoints.py` — centralized Kidde API URL builders (base is `config.API_BASE_URL`)
 - `app/storage/influxdb.py` — `InfluxDBStorage`, asyncio-native `InfluxDBClientAsync` (open in `connect()`, `ping()` fail-fast, one awaited batch per poll cycle), measurement `kidde_collector_device`
-- `app/utils/logging.py` — colored console logger
+- `app/core/logging_config.py` — the fleet logging module (`luxarch --emit logging`, never hand-edited): JSON lines to stdout, `configure_logging()` called once in `app/main.py`; modules use `logging.getLogger(__name__)`
 - `app/health/check.py` — Docker HEALTHCHECK
 
 Validate layout conformance with `python /mnt/luxardolabs/check_layout.py .` (must be green).
@@ -125,7 +133,7 @@ Required: `INFLUXDB_URL`, `INFLUXDB_TOKEN`, `INFLUXDB_ORG`, `INFLUXDB_BUCKET`, `
 1. **API base URL is env-overridable** (`KIDDE_COLLECTOR_API_BASE_URL`) so the dev/demo/e2e stacks can target the harness emulator instead of the real cloud.
 1. **InfluxDB writes** use the asyncio-native `InfluxDBClientAsync` (fleet ingestion standard): opened in `connect()` inside the loop, `ping()` fails fast on an unreachable server, and each poll cycle's points are one awaited batch write (no Rx thread, no buffer to flush; gzip on). Auth/bucket errors (401/404) log actionable guidance and keep retrying.
 1. **Error handling**: the loop continues despite individual failures — check logs.
-1. **Docker**: four-stage `Dockerfile` (builder → builder-dev → base → dev). Prod pulls `:latest`; the local dev/demo stacks build the runtime image. Lint/type checks run mount-only against the source (no app image); `make test` builds a lean `Dockerfile.test` image from `poetry.lock` and over-mounts the source — neither inherits `:dev`.
+1. **Docker**: four-stage `Dockerfile` (builder → builder-dev → base → dev). Prod pins the released `TAG=<version>` in `.env.prod`; the local dev/demo stacks build the runtime image. Lint/type checks run mount-only against the source (no app image); `make test` builds a lean `Dockerfile.test` image from `poetry.lock` and mounts the source — neither inherits `:dev`. `make release` is multi-arch: it pushes a `candidate-<commit>`, scans every platform with luxaudit, then promotes `:VERSION` + `:latest` by digest and publishes the GitHub Release (`make gh-release`).
 1. **NO AI attribution** in commits/PRs (house rule — no Co-Authored-By, "Generated with", robot emoji).
 
 Migration/alignment chunks are tracked as LuxPM issues (project `KIDDECOLLE`).

@@ -64,7 +64,10 @@ make prod-down                 # stop
 Build on your build host, push the image, then deploy to a node that only pulls images (no source, no builds). Set the target once with `PROD_NODE`:
 
 ```bash
-# on the build host — cut a release (private registry) then promote to GHCR
+# on the build host — cut a release (private registry) then promote to GHCR.
+# `release` refuses a dirty tree, an already-released VERSION, or a VERSION not tagged at HEAD,
+# and scans every platform of the candidate before any release tag points at it.
+git tag -a v$(cat VERSION) -m v$(cat VERSION) && git push origin v$(cat VERSION)
 make release && make release-public
 
 # one-time: create the bind-mount data dir on the node (owned by uid 1000)

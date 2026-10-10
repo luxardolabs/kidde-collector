@@ -6,6 +6,7 @@ a SIGTERM/SIGINT triggers a graceful shutdown. Run with ``python -m app.main``.
 
 import asyncio
 import contextlib
+import logging
 import os
 import signal
 import sys
@@ -14,8 +15,12 @@ from datetime import UTC, datetime
 from app.collector.poller import KiddeCollector
 from app.collector.session import KiddeSession
 from app.core import config
+from app.core.logging_config import configure_logging
 from app.storage.influxdb import InfluxDBStorage
-from app.utils.logging import logger
+
+# Named, not __name__: run as `python -m app.main` this module IS `__main__`, and the
+# aggregator would see that instead of where the line came from.
+logger = logging.getLogger("app.main")
 
 _SENSITIVE = ("PASSWORD", "TOKEN", "USERNAME")
 
@@ -82,6 +87,9 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    configure_logging(
+        service="kidde-collector", version=config.BUILD_VERSION, level=config.LOG_LEVEL
+    )
     try:
         with asyncio.Runner() as runner:
             runner.run(main())

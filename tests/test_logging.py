@@ -1,110 +1,338 @@
-"""Tests for the logging setup.
+"""The collector logs through the fleet module (app/core/logging_config.py), wired in app.main.
 
-The structured JSON formatter is the fleet's log-aggregation path — if it drops `extra=`
-fields or emits invalid JSON the aggregator silently loses records, which looks like
-"the collector went quiet" rather than a logging bug.
+What matters downstream is the line the aggregator receives: one JSON object per line, carrying
+the service name and version, with caller fields under `attributes`. If the entrypoint stops
+calling configure_logging(), records fall back to Python's default stderr handler and the
+aggregator silently loses them — this runs the real entrypoint and reads what it writes.
 """
 
+import io
 import json
 import logging
+import os
+import runpy
+import subprocess
+import sys
+from collections.abc import Iterator, Mapping
+from pathlib import Path
+from typing import Any
+
+import pytest
 
 from app.core import config
-from app.utils.logging import ColoredFormatter, StructuredFormatter, setup_logger
+from app.core import logging_config as lc
+
+REPO = Path(__file__).resolve().parent.parent
 
 
-def _record(level=logging.INFO, msg="hello %s", args=("world",), **extra):
-    record = logging.LogRecord(
-        name="kidde_collector",
-        level=level,
-        pathname=__file__,
-        lineno=1,
-        msg=msg,
-        args=args,
-        exc_info=None,
+def _run_entrypoint(**env: str) -> subprocess.CompletedProcess[str]:
+    # No KIDDE_COLLECTOR_* requirements set: the collector logs its settings, logs the
+    # missing-variable error and exits 1 before touching the network.
+    clean = {
+        k: v for k, v in os.environ.items() if not k.startswith("KIDDE_COLLECTOR_")
+    }
+    clean.update({"KIDDE_COLLECTOR_BUILD_VERSION": "9.9.9-test", **env})
+    return subprocess.run(
+        [sys.executable, "-m", "app.main"],
+        cwd=REPO,
+        env=clean,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
     )
-    for key, value in extra.items():
-        setattr(record, key, value)
-    return record
 
 
-class TestStructuredFormatter:
-    def test_emits_valid_json_with_the_core_fields(self):
-        payload = json.loads(StructuredFormatter().format(_record()))
-        assert payload["level"] == "INFO"
-        assert payload["logger"] == "kidde_collector"
-        assert payload["message"] == "hello world", "lazy %s args must be interpolated"
-        assert payload["timestamp"].endswith("+00:00"), (
-            "timestamps must be tz-aware UTC"
-        )
+def _json_lines(out: str) -> list[dict[str, object]]:
+    return [json.loads(line) for line in out.splitlines() if line.strip()]
 
-    def test_extra_fields_are_carried_through(self):
-        """`extra=` is the whole point of structured logging — it must survive to the JSON."""
-        payload = json.loads(StructuredFormatter().format(_record(device_id=553549)))
-        assert payload["device_id"] == 553549
 
-    def test_reserved_logrecord_attrs_are_not_leaked(self):
-        """Internal LogRecord machinery must not pollute the aggregated document."""
-        payload = json.loads(StructuredFormatter().format(_record()))
-        for reserved in ("pathname", "lineno", "msg", "args", "levelno"):
-            assert reserved not in payload
+def test_entrypoint_writes_one_json_object_per_line() -> None:
+    result = _run_entrypoint()
+    assert result.returncode == 1
+    lines = _json_lines(result.stdout)
+    assert lines, f"no log lines on stdout; stderr was: {result.stderr!r}"
+    for line in lines:
+        assert line["service"] == "kidde-collector"
+        assert line["version"] == "9.9.9-test"
+        assert str(line["timestamp"]).endswith("Z")
+    errors = [line for line in lines if line["level"] == "ERROR"]
+    assert any(
+        "Missing required environment variables" in str(e["message"]) for e in errors
+    )
+    assert errors[0]["logger"] == "app.main"
 
-    def test_exception_is_serialized_when_present(self):
+
+def test_log_level_setting_reaches_the_root_logger() -> None:
+    result = _run_entrypoint(KIDDE_COLLECTOR_LOG_LEVEL="ERROR")
+    levels = {line["level"] for line in _json_lines(result.stdout)}
+    assert levels == {"ERROR"}, "INFO lines leaked past KIDDE_COLLECTOR_LOG_LEVEL=ERROR"
+
+
+def test_log_format_text_is_readable_not_json() -> None:
+    result = _run_entrypoint(LOG_FORMAT="text")
+    first = result.stdout.splitlines()[0]
+    assert not first.startswith("{")
+    assert "Welcome to Kidde Collector" in first
+
+
+# ── The module's contract, in process ─────────────────────────────────────────────────────────
+# The fields below are what the aggregator keys on; the redactor and collision behaviour are what
+# keep a log call from crashing or leaking. The fixture restores the global state that
+# configure_logging() replaces (root handlers and level, Logger.makeRecord).
+
+
+@pytest.fixture
+def stream(monkeypatch: pytest.MonkeyPatch) -> Iterator[io.StringIO]:
+    root = logging.getLogger()
+    handlers, level = root.handlers[:], root.level
+    # Registered so monkeypatch puts the stock makeRecord back after configure_logging swaps it.
+    monkeypatch.setattr(logging.Logger, "makeRecord", logging.Logger.makeRecord)
+    out = io.StringIO()
+    for var in ("LOG_FORMAT", "LOG_LEVEL", "LOG_MODULE_LEVELS"):
+        monkeypatch.delenv(var, raising=False)
+    _stream.append(out)
+    yield out
+    _stream.clear()
+    root.handlers[:] = handlers
+    root.setLevel(level)
+
+
+_stream: list[io.StringIO] = []
+
+
+def _configure(**kwargs: Any) -> None:
+    lc.configure_logging(service="svc", version="1.2.3", level="DEBUG", **kwargs)
+    # The handler binds sys.stdout when it is built; pytest's capture owns that, so read
+    # the line from a stream of the test's own.
+    handler = logging.getLogger().handlers[0]
+    assert isinstance(handler, logging.StreamHandler)
+    handler.setStream(_stream[0])
+
+
+def _lines(out: io.StringIO) -> list[dict[str, Any]]:
+    return [json.loads(line) for line in out.getvalue().splitlines() if line]
+
+
+class TestJsonLine:
+    def test_envelope_and_attributes(self, stream: io.StringIO) -> None:
+        _configure(environment="prod")
+        logging.getLogger("app.x").info("wrote %d", 3, extra={"device_id": 7})
+        (line,) = _lines(stream)
+        assert line["message"] == "wrote 3"
+        assert line["logger"] == "app.x"
+        assert line["service"] == "svc" and line["version"] == "1.2.3"
+        assert line["environment"] == "prod"
+        assert line["function"] == "test_envelope_and_attributes"
+        assert line["attributes"] == {"device_id": 7}
+
+    def test_colliding_extra_key_is_kept_not_raised(self, stream: io.StringIO) -> None:
+        _configure()
+        logging.getLogger("app.x").info("m", extra={"name": "Basement", "module": "m"})
+        (line,) = _lines(stream)
+        assert line["logger"] == "app.x"
+        assert line["attributes"] == {"name": "Basement", "module": "m"}
+
+    def test_no_attributes_key_without_fields(self, stream: io.StringIO) -> None:
+        _configure()
+        logging.getLogger("app.x").info("plain")
+        assert "attributes" not in _lines(stream)[0]
+
+    def test_log_context_and_trace_ids(self, stream: io.StringIO) -> None:
+        _configure()
+        with lc.log_context(cycle=4, trace_id="t1"):
+            logging.getLogger("app.x").info("m", extra={"otelSpanID": "s1"})
+        logging.getLogger("app.x").info("after")
+        first, after = _lines(stream)
+        assert first["trace_id"] == "t1" and first["span_id"] == "s1"
+        assert first["attributes"] == {"cycle": 4}
+        assert "attributes" not in after
+
+    def test_exception_and_stack(self, stream: io.StringIO) -> None:
+        _configure()
         try:
             raise ValueError("boom")
         except ValueError:
-            import sys
+            logging.getLogger("app.x").exception("failed", stack_info=True)
+        (line,) = _lines(stream)
+        assert line["exception_type"] == "ValueError"
+        assert "ValueError: boom" in line["exception"]
+        assert "Stack (most recent call last)" in line["stack"]
 
-            record = _record()
-            record.exc_info = sys.exc_info()
-            payload = json.loads(StructuredFormatter().format(record))
-        assert "ValueError: boom" in payload["exception"]
+    def test_unserialisable_values_still_write_a_line(
+        self, stream: io.StringIO
+    ) -> None:
+        class BadRepr:
+            def __repr__(self) -> str:
+                raise RuntimeError
 
-    def test_output_is_a_single_line(self):
-        """A record that spans lines breaks line-delimited log shipping."""
-        out = StructuredFormatter().format(_record(msg="a\nb", args=()))
-        assert "\n" not in out
+        _configure()
+        extra = {"nan": float("nan"), "inf": float("inf"), "ok": 1.5, "bad": BadRepr()}
+        logging.getLogger("app.x").info("m", extra=extra)
+        (line,) = _lines(stream)
+        assert line["attributes"]["nan"] == "nan"
+        assert line["attributes"]["inf"] == "inf"
+        assert line["attributes"]["ok"] == 1.5
+        assert "BadRepr object" in line["attributes"]["bad"]
 
-
-class TestColoredFormatter:
-    def test_level_is_wrapped_in_its_color(self):
-        out = ColoredFormatter("%(levelname)s:%(message)s").format(
-            _record(level=logging.ERROR)
-        )
-        assert "\033[31m" in out and "\033[0m" in out
-
-    def test_unknown_level_passes_through_uncolored(self):
-        record = _record()
-        record.levelname = "TRACE"
-        out = ColoredFormatter("%(levelname)s:%(message)s").format(record)
-        assert "\033[" not in out
+    def test_uvicorn_colour_duplicate_is_dropped(self, stream: io.StringIO) -> None:
+        _configure()
+        logging.getLogger("app.x").info("m", extra={"color_message": "\x1b[1m"})
+        assert "attributes" not in _lines(stream)[0]
 
 
-class TestSetupLogger:
-    def test_does_not_propagate_to_root(self, monkeypatch):
-        """Propagating would double-log through any root handler an import installs."""
-        monkeypatch.setattr(config, "LOG_STRUCTURED", False)
-        log = setup_logger("kidde_test_propagate", "INFO")
-        assert log.propagate is False
+class TestRedactor:
+    def test_redactor_scrubs_envelope_and_attributes(self, stream: io.StringIO) -> None:
+        def scrub(part: dict[str, Any]) -> Mapping[str, Any]:
+            hidden = ("email", "message")
+            return {k: ("***" if k in hidden else v) for k, v in part.items()}
 
-    def test_repeated_setup_does_not_stack_handlers(self, monkeypatch):
-        """Re-running setup must replace handlers, not add a duplicate line per call."""
-        monkeypatch.setattr(config, "LOG_STRUCTURED", False)
-        setup_logger("kidde_test_dupe", "INFO")
-        log = setup_logger("kidde_test_dupe", "INFO")
-        assert len(log.handlers) == 1
+        _configure(redact=scrub)
+        logging.getLogger("app.x").info("hi a@b.c", extra={"email": "a@b.c", "n": 1})
+        (line,) = _lines(stream)
+        assert line["message"] == "***"
+        assert line["attributes"] == {"email": "***", "n": 1}
 
-    def test_structured_flag_selects_the_json_formatter(self, monkeypatch):
-        monkeypatch.setattr(config, "LOG_STRUCTURED", True)
-        log = setup_logger("kidde_test_structured", "INFO")
-        assert isinstance(log.handlers[0].formatter, StructuredFormatter)
+    def test_raising_redactor_fails_closed(self, stream: io.StringIO) -> None:
+        def scrub(part: dict[str, Any]) -> Mapping[str, Any]:
+            raise KeyError("x")
 
-    def test_default_selects_the_colored_formatter(self, monkeypatch):
-        monkeypatch.setattr(config, "LOG_STRUCTURED", False)
-        log = setup_logger("kidde_test_colored", "INFO")
-        assert isinstance(log.handlers[0].formatter, ColoredFormatter)
+        _configure(redact=scrub)
+        logging.getLogger("app.x").info("secret", extra={"token": "t"})
+        (line,) = _lines(stream)
+        assert line["redaction_error"] == "KeyError"
+        assert "secret" not in json.dumps(line) and "attributes" not in line
 
-    def test_level_is_applied_to_logger_and_handler(self, monkeypatch):
-        monkeypatch.setattr(config, "LOG_STRUCTURED", False)
-        log = setup_logger("kidde_test_level", "WARNING")
-        assert log.level == logging.WARNING
-        assert log.handlers[0].level == logging.WARNING
+    def test_non_mapping_redactor_fails_closed(self, stream: io.StringIO) -> None:
+        def scrub(part: dict[str, Any]) -> Any:
+            return None
+
+        _configure(redact=scrub)
+        logging.getLogger("app.x").info("secret")
+        (line,) = _lines(stream)
+        assert line["redaction_error"] == "returned NoneType, not a mapping"
+
+    def test_format_failure_report_withholds_content(
+        self, stream: io.StringIO, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _configure(redact=lambda part: part)
+        logging.getLogger("app.x").info("%d", "not-a-number")
+        err = capsys.readouterr().err
+        assert "record content withheld" in err and "not-a-number" not in err
+
+    def test_format_failure_without_redactor_uses_stock_report(
+        self, stream: io.StringIO, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        _configure()
+        logging.getLogger("app.x").info("%d", "not-a-number")
+        assert "Logging error" in capsys.readouterr().err
+
+
+class TestTextFormat:
+    def test_text_line_appends_fields(
+        self, stream: io.StringIO, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("LOG_FORMAT", "text")
+        _configure()
+        try:
+            raise ValueError("boom")
+        except ValueError:
+            logging.getLogger("app.x").exception(
+                "failed", extra={"n": 1}, stack_info=True
+            )
+        out = stream.getvalue()
+        assert "ERROR app.x failed n=1" in out
+        assert "ValueError: boom" in out and "Stack (most recent call last)" in out
+
+    def test_text_line_without_fields(
+        self, stream: io.StringIO, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("LOG_FORMAT", "text")
+        _configure()
+        logging.getLogger("app.x").info("plain")
+        assert stream.getvalue().rstrip().endswith("INFO app.x plain")
+
+
+class TestLevels:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [("warning", logging.WARNING), (" 15 ", 15), (30, 30), ("bogus", logging.INFO)],
+    )
+    def test_level_parsing_never_crashes(self, raw: str | int, expected: int) -> None:
+        assert lc._level(raw) == expected
+
+    def test_level_falls_back_to_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LOG_LEVEL", "ERROR")
+        assert lc._level(None) == logging.ERROR
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (
+                '{"app.a": "DEBUG", "app.b": 10, "app.c": true}',
+                {"app.a": "DEBUG", "app.b": 10},
+            ),
+            ("[1, 2]", {}),
+            ("not json", {}),
+        ],
+    )
+    def test_module_levels_env(
+        self, monkeypatch: pytest.MonkeyPatch, raw: str, expected: dict[str, Any]
+    ) -> None:
+        monkeypatch.setenv("LOG_MODULE_LEVELS", raw)
+        assert lc._env_levels() == expected
+
+    def test_per_logger_levels_and_idempotence(self, stream: io.StringIO) -> None:
+        _configure(levels={"app.quiet": "ERROR"})
+        _configure(levels={"app.quiet": "ERROR"})
+        assert len(logging.getLogger().handlers) == 1
+        logging.getLogger("app.quiet").warning("dropped")
+        logging.getLogger("app.loud").debug("kept")
+        assert [line["message"] for line in _lines(stream)] == ["kept"]
+
+
+class TestEdges:
+    def test_exc_info_without_an_exception_type(self, stream: io.StringIO) -> None:
+        _configure()
+        logging.getLogger("app.x").info("m", exc_info=(None, None, None))
+        assert "exception_type" not in _lines(stream)[0]
+
+    def test_unserialisable_envelope_without_attributes(
+        self, stream: io.StringIO
+    ) -> None:
+        def scrub(part: dict[str, Any]) -> Mapping[str, Any]:
+            return {**part, "ratio": float("nan")}
+
+        _configure(redact=scrub)
+        logging.getLogger("app.x").info("m")
+        (line,) = _lines(stream)
+        assert line["ratio"] == "nan" and "attributes" not in line
+
+    def test_format_failure_is_silent_when_raise_exceptions_is_off(
+        self,
+        stream: io.StringIO,
+        capsys: pytest.CaptureFixture[str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(logging, "raiseExceptions", False)
+        _configure(redact=lambda part: part)
+        logging.getLogger("app.x").info("%d", "not-a-number")
+        assert capsys.readouterr().err == ""
+
+
+def test_entrypoint_block_configures_logging_then_exits_on_bad_env(
+    stream: io.StringIO, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The `__main__` block in process: configure_logging() installs the fleet handler
+    before main() runs, and a missing variable exits 1 rather than raising."""
+    for var in config.REQUIRED_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+    # runpy executes the module fresh as __main__; an already-imported app.main would be
+    # shadowed (RuntimeWarning), so take it out of sys.modules for this test only.
+    monkeypatch.delitem(sys.modules, "app.main", raising=False)
+    with pytest.raises(SystemExit) as exit_info:
+        runpy.run_module("app.main", run_name="__main__")
+    assert exit_info.value.code == 1
+    handler = logging.getLogger().handlers[0]
+    assert isinstance(handler.formatter, lc.JsonFormatter)
+    assert handler.formatter.service == "kidde-collector"

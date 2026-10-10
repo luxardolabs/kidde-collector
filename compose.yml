@@ -55,6 +55,9 @@ services:
       # (repo.compose_db_ephemeral_volume). `docker compose down -v` wipes it, which is
       # what the e2e teardown does every run.
       - kidde_influxdb_data:/var/lib/influxdb2
+      # The image also declares /etc/influxdb2 (the CLI config written at setup) a VOLUME;
+      # left unmapped it is a fresh anonymous volume every `up`, abandoned every `down`.
+      - kidde_influxdb_config:/etc/influxdb2
       - ./ops/influxdb/init-dbrp.sh:/docker-entrypoint-initdb.d/init-dbrp.sh:ro
     # NO host port. The collector and Grafana both reach InfluxDB over the compose network
     # (http://kidde_influxdb:8086), so publishing it only creates a fleet-wide collision —
@@ -93,6 +96,28 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # The real InfluxDB the pytest suite writes to (`make test` — the emitted test block starts it in
+  # a compose project of its own per run, waits on the healthcheck, and tears it down). Ephemeral
+  # by design: tmpfs data, no container_name, no host port, no named network. Fixed TEST values.
+  kidde_influxdb_test:
+    profiles: ["test"]
+    image: influxdb:2.7
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: kidde
+      DOCKER_INFLUXDB_INIT_PASSWORD: kidde-test-password
+      DOCKER_INFLUXDB_INIT_ORG: kidde
+      DOCKER_INFLUXDB_INIT_BUCKET: kidde
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: kidde-test-token
+    tmpfs:
+      - /var/lib/influxdb2
+      - /etc/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
   # Fake Kidde cloud endpoint (the harness emulator) — no account, no hardware. Built
   # OUTSIDE compose by `make harness-build`, then run here by tag.
   kidde_fake:
@@ -107,5 +132,6 @@ services:
 
 volumes:
   kidde_influxdb_data:
+  kidde_influxdb_config:
   kidde_grafana_data:
   kidde_collector_output:

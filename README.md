@@ -36,7 +36,7 @@ make up            # collector-only, against YOUR external InfluxDB (edit .env.d
 
 make lint          # luxlint: canonical ruff + docstrings + secret-config guard (mount-only)
 make mypy          # luxlint type leg: mypy with the fleet stubs baked (mount-only)
-make test          # pytest suite + coverage ratchet (canonical config, lock-built image, no network)
+make test          # pytest suite against a throwaway real InfluxDB + branch-coverage ratchet
 make format        # THE canonical fixer, in place: ruff --fix + ruff format + markdown
 make arch          # luxarch: architecture conformance
 make audit         # luxaudit: dependency-CVE scan (live OSV + PyPA feed)

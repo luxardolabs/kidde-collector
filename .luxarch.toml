@@ -22,4 +22,4 @@ source_client = ["collector/session.py"]   # kidde's long-lived source session
 # hollow-green trade ADR-004 warns about, from the other side). Revisit if OTel is ever added.
 [observability]
 enabled = false
-exempt_reason = "headless collector, no telemetry shipped: zero opentelemetry/prometheus_client dependencies and no span or tracer call in app/. Operational signal is the structured log stream (app/utils/logging.py) plus the InfluxDB series it writes, which a dashboard reads staleness from directly."
+exempt_reason = "headless collector, no telemetry shipped: zero opentelemetry/prometheus_client dependencies and no span or tracer call in app/. Operational signal is the structured JSON log stream (app/core/logging_config.py) plus the InfluxDB series it writes, which a dashboard reads staleness from directly."

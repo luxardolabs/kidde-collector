@@ -421,6 +421,6 @@ class TestDebugLineProtocol:
         api = FakeWriteApi()
         s = _storage(monkeypatch, api)
         points = InfluxDBStorage._device_points(DEVICE, "Tyle")
-        with caplog.at_level(logging.DEBUG, logger="kidde_collector"):
+        with caplog.at_level(logging.DEBUG, logger="app.storage.influxdb"):
             await s._write(points)
         assert any("kidde_collector_device" in r.getMessage() for r in caplog.records)
