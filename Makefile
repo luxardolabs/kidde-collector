@@ -191,6 +191,9 @@ build-local: ## Build the runtime image from CURRENT source as a local tag (no p
 # clean (untracked files are in the build context), and the exact bits about to be pushed are
 # scanned first (luxaudit --image-archive). Same shape as luxarch's image block, multi-arch.
 CANDIDATE_IMAGE := $(REGISTRY)/$(IMAGE_NAME):candidate-$(COMMIT)
+# PLATFORMS is buildx's comma list; the per-platform scan loop needs it word-split.
+COMMA := ,
+SPACE := $(subst ,, )
 
 define refuse_dirty_tree
 	@if [ -n "$$(git status --porcelain 2>/dev/null)" ]; then \
@@ -224,7 +227,7 @@ endef
 # Scan a PUSHED multi-arch image, every platform, before any release tag points at it.
 define scan_pushed
 	@set -e; T=$$(mktemp); trap 'rm -f "$$T"' EXIT INT TERM; \
-	for p in $(PLATFORMS); do \
+	for p in $(subst $(COMMA),$(SPACE),$(PLATFORMS)); do \
 	  docker pull -q --platform $$p $(1) >/dev/null; \
 	  docker save $(1) -o "$$T"; chmod 644 "$$T"; \
 	  docker run --rm -v $(PWD):/repo -v luxaudit-cache:/root/.cache/trivy -v "$$T":/candidate.tar:ro \
