@@ -7,8 +7,7 @@
   "summary": {
     "PASS": 26,
     "FAIL": 0,
-    "XFAIL": 0,
-    "INERT": 1
+    "XFAIL": 0
   },
   "vulnerable": [],
   "deferred": [],
@@ -16,15 +15,13 @@
   "not_audited": [],
   "image": {
     "ref": "luxardolabs/kidde-collector:2026.10.1",
-    "inert": true,
-    "inert_reason": "luxardolabs/kidde-collector:2026.10.1: not in the registry, so nothing was released at this VERSION. A deploy that pins `:sha-\u2026` is not visible from the mount; name it in `[image] refs`",
+    "inert": false,
+    "inert_reason": "",
     "error": "",
-    "not_released": [
-      "luxardolabs/kidde-collector:2026.10.1"
-    ],
+    "not_released": [],
     "vulnerable": [],
     "deferred": []
   },
-  "commit": "9c3cdff87affc0c8da7ee2224097a1810f59c338",
-  "generated_at": "2026-10-10T19:56:56Z"
+  "commit": "1a5297e84b3daecf2a6d61659debc321c184b36d",
+  "generated_at": "2026-10-10T20:00:07Z"
 }
