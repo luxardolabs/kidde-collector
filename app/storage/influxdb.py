@@ -98,7 +98,7 @@ class InfluxDBStorage:
             logger.exception(
                 "InfluxDB connection failed: could not reach %s (%s: %s). Verify InfluxDB "
                 "is running, the URL/port are correct, and reachable.",
-                self.url,
+                config.redact_url(self.url),
                 type(e).__name__,
                 e,
             )
@@ -106,7 +106,9 @@ class InfluxDBStorage:
 
         if not healthy:
             await self._close_client()
-            logger.error("InfluxDB health check failed at %s", self.url)
+            logger.error(
+                "InfluxDB health check failed at %s", config.redact_url(self.url)
+            )
             raise SystemExit(1)
 
         self.write_api = self.client.write_api()

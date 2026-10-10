@@ -187,19 +187,31 @@ build-local: ## Build the runtime image from CURRENT source as a local tag (no p
 	docker build $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(LOCAL_IMAGE) .
 
 # ── Release gates, shared by every target that pushes an immutable tag ──────────────────────────
-# A released version is never re-pushed (prod pins it), the tag names HEAD only if the tree is
-# clean (untracked files are in the build context), and the exact bits about to be pushed are
-# scanned first (luxaudit --image-archive). Same shape as luxarch's image block, multi-arch.
+# A released version is never re-pushed (prod pins it); the tag names HEAD only if the tree is
+# clean, gitignored files in the build context included; every precondition the release needs is
+# checked BEFORE the first push; and the exact bits promoted are the bits scanned, by digest.
 CANDIDATE_IMAGE := $(REGISTRY)/$(IMAGE_NAME):candidate-$(COMMIT)
+RELEASE_NOTES   := app/release_notes/$(VERSION).md
 # PLATFORMS is buildx's comma list; the per-platform scan loop needs it word-split.
 COMMA := ,
 SPACE := $(subst ,, )
 
+# `git status --porcelain` does not list gitignored files, but the build context holds them: a
+# session-cookie dump under app/output/ would pass and ship. So also refuse any ignored file under
+# app/ (what the Dockerfile COPYs) except the caches .dockerignore drops at every depth.
 define refuse_dirty_tree
 	@if [ -n "$$(git status --porcelain 2>/dev/null)" ]; then \
 	  echo "REFUSING: the working tree is dirty, so $(COMMIT) would not describe these bits:"; \
 	  git status --short | sed 's/^/    /'; \
 	  echo "Commit first, then release what you committed."; \
+	  exit 1; \
+	fi
+	@ign=$$(git ls-files --others --ignored --exclude-standard -- app 2>/dev/null \
+	  | grep -vE '(^|/)__pycache__/|\.py[cod]$$|(^|/)\.DS_Store$$' || true); \
+	if [ -n "$$ign" ]; then \
+	  echo "REFUSING: gitignored files sit in the build context and would ship:"; \
+	  echo "$$ign" | sed 's/^/    /'; \
+	  echo "Remove them (or add them to .dockerignore) before releasing."; \
 	  exit 1; \
 	fi
 endef
@@ -216,44 +228,63 @@ define refuse_released
 	esac
 endef
 
-# Scan a local image (the tag about to be pushed), mount-only; any fixable HIGH/CRITICAL refuses.
-define scan_candidate
-	@set -e; T=$$(mktemp); trap 'rm -f "$$T"' EXIT INT TERM; \
-	docker save $(1) -o "$$T"; chmod 644 "$$T"; \
-	docker run --rm -v $(PWD):/repo -v luxaudit-cache:/root/.cache/trivy -v "$$T":/candidate.tar:ro \
-	  $(LUXAUDIT_IMAGE) --image-archive /candidate.tar --image-label $(1)
-endef
-
-# Scan a PUSHED multi-arch image, every platform, before any release tag points at it.
-define scan_pushed
-	@set -e; T=$$(mktemp); trap 'rm -f "$$T"' EXIT INT TERM; \
-	for p in $(subst $(COMMA),$(SPACE),$(PLATFORMS)); do \
-	  docker pull -q --platform $$p $(1) >/dev/null; \
-	  docker save $(1) -o "$$T"; chmod 644 "$$T"; \
-	  docker run --rm -v $(PWD):/repo -v luxaudit-cache:/root/.cache/trivy -v "$$T":/candidate.tar:ro \
-	    $(LUXAUDIT_IMAGE) --image-archive /candidate.tar --image-label "$(2) ($$p)"; \
-	done
-endef
-
-version-build-push: ## Build + scan + push :$(VERSION) ONLY (runtime base stage, host arch) to the private registry
-	$(call refuse_released,$(VERSION_IMAGE))
-	$(refuse_dirty_tree)
-	docker build --load $(NO_CACHE_FLAG) --target base -f Dockerfile $(BUILD_ARGS) -t $(VERSION_IMAGE) .
-	$(call scan_candidate,$(VERSION_IMAGE))
-	docker push $(VERSION_IMAGE)
-	@echo "Pushed $(VERSION_IMAGE)"
-
-# The cut release, multi-arch: build ONCE under a tag nothing pins, scan THAT image on every
-# platform, then promote BY DIGEST — the release tags name exactly the bits just scanned (a
-# rebuild between scan and push could not promise that; repo.release_scans_candidate).
-release: buildx-setup ## Cut VERSION: build + scan + push :$(VERSION) AND :latest (multi-arch), then the GitHub Release
-	$(call refuse_released,$(VERSION_IMAGE))
-	$(refuse_dirty_tree)
+# Everything the release needs that is NOT the image, checked before anything is pushed: a push
+# that then fails here burns the version (refuse_released blocks the retry) with no GitHub Release.
+define release_preflight
 	@t=$$(git rev-parse -q --verify "refs/tags/v$(VERSION)^{commit}" 2>/dev/null); \
 	if [ "$$t" != "$$(git rev-parse HEAD)" ]; then \
 	  echo "REFUSING: v$(VERSION) is not tagged at HEAD. Tag and push it first:"; \
 	  echo "    git tag -a v$(VERSION) -m v$(VERSION) && git push origin v$(VERSION)"; exit 1; \
 	fi
+	@r=$$(git ls-remote origin "refs/tags/v$(VERSION)^{}" 2>/dev/null | cut -f1); \
+	[ -n "$$r" ] || r=$$(git ls-remote origin "refs/tags/v$(VERSION)" 2>/dev/null | cut -f1); \
+	if [ "$$r" != "$$(git rev-parse HEAD)" ]; then \
+	  echo "REFUSING: v$(VERSION) on origin is '$${r:-absent}', not HEAD: git push origin v$(VERSION)"; exit 1; \
+	fi
+	@[ -f "$(RELEASE_NOTES)" ] || { echo "REFUSING: $(RELEASE_NOTES) is missing — write the release notes first"; exit 1; }
+	@command -v gh >/dev/null 2>&1 || { echo "REFUSING: the GitHub CLI (gh) is not installed; the release publishes its notes with it"; exit 1; }
+	@gh auth status >/dev/null 2>&1 || { echo "REFUSING: gh is not authenticated (gh auth login)"; exit 1; }
+endef
+
+# Scan a PUSHED multi-arch image on every platform before any release tag points at it.
+# Its index digest is read first and re-read after the last scan: if the tag moved meanwhile, the
+# scanned bits are not what would be promoted, so it refuses. `pull --platform` re-points the
+# host's LOCAL copy of the tag at each platform in turn (the last is arm64 on an x86 host), so the
+# local tag is dropped afterwards; the registry's is untouched.
+#   $(1) the pushed ref  $(2) scan label
+define scan_pushed
+	@set -e; T=$$(mktemp); trap 'rm -f "$$T"; docker image rm $(1) >/dev/null 2>&1 || true' EXIT INT TERM; \
+	digest() { docker buildx imagetools inspect $(1) --format '{{json .Manifest}}' \
+	  | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])'; }; \
+	D=$$(digest); [ -n "$$D" ] || { echo "REFUSING: could not resolve the digest of $(1)"; exit 1; }; \
+	echo "scanning $(1) ($$D)"; \
+	for p in $(subst $(COMMA),$(SPACE),$(PLATFORMS)); do \
+	  docker pull -q --platform $$p $(1) >/dev/null; \
+	  docker save $(1) -o "$$T"; chmod 644 "$$T"; \
+	  docker run --rm -v $(PWD):/repo -v luxaudit-cache:/root/.cache/trivy -v "$$T":/candidate.tar:ro \
+	    $(LUXAUDIT_IMAGE) --image-archive /candidate.tar --image-label "$(2) ($$p)"; \
+	done; \
+	[ "$$(digest)" = "$$D" ] || { echo "REFUSING: $(1) moved while it was being scanned"; exit 1; }
+endef
+
+# The lock audit gates every version push: the image scan only refuses fixable HIGH/CRITICAL, and
+# a MEDIUM CVE in a locked package (multidict CVE-2026-104874 in 2026.10.0) passes it.
+version-build-push: audit buildx-setup ## Build + scan + push :$(VERSION) ONLY (multi-arch, no :latest, no GitHub Release)
+	$(call refuse_released,$(VERSION_IMAGE))
+	$(refuse_dirty_tree)
+	$(release_preflight)
+	docker buildx build $(NO_CACHE_FLAG) --target base --platform $(PLATFORMS) -f Dockerfile $(BUILD_ARGS) \
+		-t $(CANDIDATE_IMAGE) --push .
+	$(call scan_pushed,$(CANDIDATE_IMAGE),$(VERSION_IMAGE))
+	docker buildx imagetools create -t $(VERSION_IMAGE) $(CANDIDATE_IMAGE)
+	@echo "Pushed $(VERSION_IMAGE)"
+
+# The cut release, multi-arch: build ONCE under a tag nothing pins, scan THAT image on every
+# platform, then promote it (repo.release_scans_candidate), then the GitHub Release.
+release: audit buildx-setup ## Cut VERSION: build + scan + push :$(VERSION) AND :latest (multi-arch), then the GitHub Release
+	$(call refuse_released,$(VERSION_IMAGE))
+	$(refuse_dirty_tree)
+	$(release_preflight)
 	docker buildx build $(NO_CACHE_FLAG) --target base --platform $(PLATFORMS) -f Dockerfile $(BUILD_ARGS) \
 		-t $(CANDIDATE_IMAGE) --push .
 	$(call scan_pushed,$(CANDIDATE_IMAGE),$(VERSION_IMAGE))
@@ -266,7 +297,7 @@ release: buildx-setup ## Cut VERSION: build + scan + push :$(VERSION) AND :lates
 # /releases page is empty and app/release_notes/$(VERSION).md goes unused. Enforced by
 # repo.github_release_wired; see luxarch --doc FLEET-RELEASE-PROCESS §9. Idempotent.
 gh-release: ## Publish the GitHub Release for $(VERSION) from its committed release notes (`release` runs it)
-	@notes="app/release_notes/$(VERSION).md"; \
+	@notes="$(RELEASE_NOTES)"; \
 	if [ ! -f "$$notes" ]; then echo "!! $$notes missing — write the release notes before cutting the Release"; exit 1; fi; \
 	if ! git ls-remote --exit-code --tags origin "refs/tags/v$(VERSION)" >/dev/null 2>&1; then echo "!! tag v$(VERSION) is not on origin — tag and push it first"; exit 1; fi; \
 	if gh release view "v$(VERSION)" >/dev/null 2>&1; then \
@@ -275,9 +306,9 @@ gh-release: ## Publish the GitHub Release for $(VERSION) from its committed rele
 	  gh release create "v$(VERSION)" --title "$(VERSION)" --notes-file "$$notes" --verify-tag; \
 	fi
 
-# Promote the released, already-scanned :$(VERSION) to GHCR by digest. It probes ITS destination
-# tag (a public :VERSION is immutable too) and re-scans the exact source it copies.
-release-public: ## Promote the released :$(VERSION) + :latest (multi-arch) to GHCR by digest — run `make release` first
+# Promote the released, already-scanned :$(VERSION) to GHCR. It probes ITS destination tag (a
+# public :VERSION is immutable too), re-scans the source, and copies that scanned digest.
+release-public: audit ## Promote the released :$(VERSION) + :latest (multi-arch) to GHCR by digest — run `make release` first
 	$(call refuse_released,$(PUBLIC_IMAGE):$(VERSION))
 	$(refuse_dirty_tree)
 	@docker buildx imagetools inspect $(VERSION_IMAGE) >/dev/null 2>&1 \

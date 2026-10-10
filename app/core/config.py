@@ -8,11 +8,42 @@ bundled dev/demo stacks use the committed, non-secret ``.env.demo``.
 import logging
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 # Module logger, never the root logger (ruff LOG015): a root-logger call implicitly
 # configures the root handler on first use, which hijacks logging for anything that
 # imports this module and bypasses the fleet handler app.core.logging_config installs.
 logger = logging.getLogger(__name__)
+
+# Config is read at IMPORT, before app.main's configure_logging() installs the fleet handler. A
+# record logged with no handler anywhere goes to logging.lastResort: plain text on stderr, outside
+# the JSON stream, so a log pipeline drops or mis-levels it. Hold those warnings until then.
+_PENDING: list[str] = []
+
+
+def _warn(msg: str, *args: object) -> None:
+    """Warn now if logging is configured, else hold the warning for ``flush_warnings()``."""
+    message = msg % args
+    if logger.hasHandlers():
+        logger.warning("%s", message)
+    else:
+        _PENDING.append(message)
+
+
+def flush_warnings() -> None:
+    """Log the warnings held since import; ``app.main`` calls it after configure_logging()."""
+    while _PENDING:
+        logger.warning("%s", _PENDING.pop(0))
+
+
+def redact_url(url: str | None) -> str | None:
+    """The URL with any ``user:password@`` credentials replaced, safe to log."""
+    if not url:
+        return url
+    parts = urlsplit(url)
+    if "@" not in parts.netloc:
+        return url
+    return parts._replace(netloc="***@" + parts.netloc.rsplit("@", 1)[1]).geturl()
 
 
 class ConfigValidator:
@@ -29,16 +60,14 @@ class ConfigValidator:
             num = int(value)
         except (ValueError, TypeError) as e:
             if default is not None:
-                logger.warning(
-                    "Value '%s' is not an integer, using default %s", value, default
-                )
+                _warn("Value '%s' is not an integer, using default %s", value, default)
                 return default
             raise ValueError(f"Invalid integer value: {value}") from e
         if (min_val is not None and num < min_val) or (
             max_val is not None and num > max_val
         ):
             if default is not None:
-                logger.warning(
+                _warn(
                     "Value %s out of range [%s, %s], using default %s",
                     num,
                     min_val,
@@ -56,9 +85,7 @@ class ConfigValidator:
         elif value.lower() in ("false", "0", "no", "off"):
             return False
         elif default is not None:
-            logger.warning(
-                "Invalid boolean value '%s', using default %s", value, default
-            )
+            _warn("Invalid boolean value '%s', using default %s", value, default)
             return default
         raise ValueError(f"Invalid boolean value: {value}")
 
@@ -68,7 +95,7 @@ class ConfigValidator:
         upper_value = value.upper()
         if upper_value in valid_levels:
             return upper_value
-        logger.warning("Invalid log level '%s', using default %s", value, default)
+        _warn("Invalid log level '%s', using default %s", value, default)
         return default
 
 
@@ -91,9 +118,11 @@ def get_env_log_level(key: str, default: str = "INFO") -> str:
 def _warn_if_insecure_url(name: str, url: str | None) -> None:
     """Warn when a URL uses cleartext http:// to a non-local host (token/data in the clear)."""
     if url and url.startswith("http://"):
-        host = url.split("://", 1)[1].split("/", 1)[0].split(":", 1)[0]
+        # urlsplit, not string slicing: `http://user:pass@host` would otherwise read `user`
+        # as the host and log it.
+        host = urlsplit(url).hostname or ""
         if host not in ("localhost", "127.0.0.1", "kidde_influxdb", "kidde_fake"):
-            logger.warning(
+            _warn(
                 "%s uses http:// (cleartext) to non-local host '%s' — use https:// in "
                 "production so the token and telemetry aren't sent in the clear.",
                 name,
@@ -186,13 +215,13 @@ REQUIRED_ENV_VARS = [
 def describe_settings() -> dict[str, str]:
     """Effective config keyed by env-var name — single source of truth for the startup log."""
     return {
-        "KIDDE_COLLECTOR_INFLUXDB_URL": str(INFLUXDB_URL),
+        "KIDDE_COLLECTOR_INFLUXDB_URL": str(redact_url(INFLUXDB_URL)),
         "KIDDE_COLLECTOR_INFLUXDB_ORG": str(INFLUXDB_ORG),
         "KIDDE_COLLECTOR_INFLUXDB_BUCKET": str(INFLUXDB_BUCKET),
         "KIDDE_COLLECTOR_INFLUXDB_TOKEN": str(INFLUXDB_TOKEN),
         "KIDDE_COLLECTOR_KIDDE_USERNAME": str(KIDDE_USERNAME),
         "KIDDE_COLLECTOR_KIDDE_PASSWORD": str(KIDDE_PASSWORD),
-        "KIDDE_COLLECTOR_API_BASE_URL": API_BASE_URL,
+        "KIDDE_COLLECTOR_API_BASE_URL": str(redact_url(API_BASE_URL)),
         "KIDDE_COLLECTOR_FETCH_INTERVAL_SECONDS": str(FETCH_INTERVAL_SECONDS),
         "KIDDE_COLLECTOR_REQUEST_TIMEOUT": str(REQUEST_TIMEOUT),
         "KIDDE_COLLECTOR_CONNECTION_TIMEOUT": str(CONNECTION_TIMEOUT),

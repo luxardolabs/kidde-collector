@@ -158,7 +158,7 @@ class TestRunLoop:
         await collector.run(event)
         assert len(calls) == 3
 
-    async def test_a_failed_cycle_does_not_kill_the_loop(self, collector):
+    async def test_a_failed_cycle_does_not_kill_the_loop(self, collector, caplog):
         """THE resilience contract: one bad cycle must not end the process."""
         event = asyncio.Event()
         calls = []
@@ -172,6 +172,10 @@ class TestRunLoop:
         collector._collect_once = flaky
         await collector.run(event)  # must return normally, not propagate
         assert len(calls) == 2, "the loop must run again after a failed cycle"
+        # The failure is logged WITH its traceback (the JSON line's `exception` field).
+        failed = [r for r in caplog.records if r.levelname == "ERROR"]
+        assert failed and failed[0].exc_info is not None
+        assert isinstance(failed[0].exc_info[1], ValueError)
 
     async def test_expired_session_clears_the_cookie_cache(self, collector):
         """The 401/403 self-heal: drop the cached cookie so the next cycle re-authenticates."""

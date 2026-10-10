@@ -38,7 +38,12 @@ def validate_environment() -> None:
     """Log the effective config and fail fast if a required variable is missing."""
     logger.info("Environment variable settings:")
     for var, value in config.describe_settings().items():
-        shown = _obscure(value) if any(s in var for s in _SENSITIVE) else value
+        if value == "None":
+            shown = "<unset>"
+        elif any(s in var for s in _SENSITIVE):
+            shown = _obscure(value)
+        else:
+            shown = value
         logger.info("  %s: %s", var, shown)
 
     missing = [v for v in config.REQUIRED_ENV_VARS if not os.environ.get(v)]
@@ -90,8 +95,12 @@ if __name__ == "__main__":
     configure_logging(
         service="kidde-collector", version=config.BUILD_VERSION, level=config.LOG_LEVEL
     )
+    config.flush_warnings()
     try:
         with asyncio.Runner() as runner:
             runner.run(main())
-    except ValueError:
+    except ValueError as e:
+        # A configuration error (missing variable, malformed InfluxDB URL): say which, then exit
+        # 1. Without this record a bad URL exits silently.
+        logger.exception("Startup aborted: %s", e)
         sys.exit(1)

@@ -93,10 +93,16 @@ async def test_dataset_lands_in_a_real_influxdb(live: dict[str, str]) -> None:
 
 
 async def test_connect_fails_fast_on_an_unreachable_server(
-    live: dict[str, str], monkeypatch: pytest.MonkeyPatch
+    live: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     # Same live config, wrong port: ping() must fail and connect() must exit, not hang.
     monkeypatch.setattr(config, "INFLUXDB_URL", live["url"].rsplit(":", 1)[0] + ":1")
     storage = InfluxDBStorage()
     with pytest.raises(SystemExit):
         await storage.connect()
+    # One record, with the transport error's traceback attached.
+    (failed,) = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert "could not reach" in failed.getMessage()
+    assert failed.exc_info is not None

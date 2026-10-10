@@ -78,3 +78,56 @@ class TestCleartextUrlWarning:
         with caplog.at_level(logging.WARNING, logger="app.core.config"):
             config._warn_if_insecure_url("KIDDE_COLLECTOR_INFLUXDB_URL", url)
         assert not [r for r in caplog.records if "cleartext" in r.getMessage()]
+
+
+class TestDeferredWarnings:
+    """Warnings raised while config is imported wait for the fleet handler, then are logged."""
+
+    def test_held_while_no_handler_then_flushed(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        monkeypatch.setattr(config, "_PENDING", [])
+        monkeypatch.setattr(config.logger, "hasHandlers", lambda: False)
+        config._warn("held %s", 1)
+        assert config._PENDING == ["held 1"]
+        monkeypatch.undo()
+        monkeypatch.setattr(config, "_PENDING", ["held 1"])
+        with caplog.at_level(logging.WARNING, logger="app.core.config"):
+            config.flush_warnings()
+        assert [r.getMessage() for r in caplog.records] == ["held 1"]
+        assert config._PENDING == []
+
+    def test_logged_at_once_when_a_handler_exists(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        monkeypatch.setattr(config, "_PENDING", [])
+        with caplog.at_level(logging.WARNING, logger="app.core.config"):
+            config._warn("now %s", 2)
+        assert [r.getMessage() for r in caplog.records] == ["now 2"]
+        assert config._PENDING == []
+
+
+class TestRedactUrl:
+    @pytest.mark.parametrize(
+        ("url", "expected"),
+        [
+            ("http://admin:pw@influx:8086/x", "http://***@influx:8086/x"),
+            ("https://tok@influx", "https://***@influx"),
+            ("http://influx:8086", "http://influx:8086"),
+            (None, None),
+            ("", ""),
+        ],
+    )
+    def test_credentials_are_replaced(
+        self, url: str | None, expected: str | None
+    ) -> None:
+        assert config.redact_url(url) == expected
+
+    def test_cleartext_warning_names_the_host_not_the_user(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        with caplog.at_level(logging.WARNING, logger="app.core.config"):
+            config._warn_if_insecure_url("X", "http://admin:pw@influx.example.com:8086")
+        (record,) = caplog.records
+        assert "'influx.example.com'" in record.getMessage()
+        assert "admin" not in record.getMessage()

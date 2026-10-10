@@ -186,13 +186,13 @@
       },
       {
         "rule": "repo.dev_tools_not_in_production",
-        "status": "PASS",
+        "status": "FAIL",
         "since": "0.243.0",
-        "violations": 0,
+        "violations": 1,
         "deferred": false,
         "inert": false,
         "inert_reason": "",
-        "fix": "",
+        "fix": "Move test tooling (pytest and its plugins, coverage, factory-boy, \u2026) to the dev group, which only the lock-keyed test image installs, and delete guard-owned tools outright (repo.guard_owned_tools_undeclared). A package declared in both main and dev is installed by `--only main`: main wins. luxaudit's image leg reports what this ships. See --doc FLEET-BUILD-DEPLOY-STANDARD (Lint & test images).",
         "example": ""
       },
       {
@@ -802,20 +802,20 @@
       }
     ],
     "summary": {
-      "PASS": 58,
-      "FAIL": 0,
+      "PASS": 57,
+      "FAIL": 1,
       "XFAIL": 0,
       "XPASS": 0,
       "INERT": 6
     }
   },
   "summary": {
-    "PASS": 65,
-    "FAIL": 0,
+    "PASS": 64,
+    "FAIL": 1,
     "XFAIL": 0,
     "XPASS": 0,
     "INERT": 6
   },
-  "commit": "1a5297e84b3daecf2a6d61659debc321c184b36d",
-  "generated_at": "2026-10-10T20:00:07Z"
+  "commit": "78d6381d8c5bbacfade748f772e8794fe2fba27d",
+  "generated_at": "2026-10-10T20:25:26Z"
 }

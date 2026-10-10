@@ -6,9 +6,10 @@
 .git
 .gitignore
 
-# Python / caches
-__pycache__
-*.py[cod]
+# Python / caches — at EVERY depth: a bare pattern matches only at the context root, so
+# `__pycache__` alone left app/**/__pycache__ in the image.
+**/__pycache__
+**/*.py[cod]
 *.so
 .Python
 .venv
@@ -27,8 +28,8 @@ htmlcov/
 !.env.example
 
 # Runtime output + quarantined legacy files (bind-mounted / local-only, never baked)
-output/
-export/
+**/output/
+**/export/
 src/
 
 # Docs / dashboards (not needed in the runtime image)
@@ -43,8 +44,8 @@ Dockerfile*
 Makefile
 
 # OS / editor
-.DS_Store
-Thumbs.db
+**/.DS_Store
+**/Thumbs.db
 *.swp
 .vscode/
 .idea/

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from aiohttp import web
 
 from app.core import config
 from app.core import logging_config as lc
@@ -41,6 +42,45 @@ def _run_entrypoint(**env: str) -> subprocess.CompletedProcess[str]:
         timeout=60,
         check=False,
     )
+
+
+# Filled-in required settings with recognisable secrets, so a test can grep for a leak.
+_SECRETS = {
+    "KIDDE_COLLECTOR_INFLUXDB_TOKEN": "not-a-real-token",
+    "KIDDE_COLLECTOR_INFLUXDB_ORG": "o",
+    "KIDDE_COLLECTOR_INFLUXDB_BUCKET": "b",
+    "KIDDE_COLLECTOR_KIDDE_USERNAME": "me@example.com",
+    "KIDDE_COLLECTOR_KIDDE_PASSWORD": "not-a-real-password",
+}
+
+
+def _docker_logs(**env: str) -> list[str]:
+    """What `docker logs` shows: the entrypoint's stdout AND stderr, merged."""
+    clean = {
+        k: v for k, v in os.environ.items() if not k.startswith("KIDDE_COLLECTOR_")
+    }
+    clean.update(env)
+    out = subprocess.run(
+        [sys.executable, "-m", "app.main"],
+        cwd=REPO,
+        env=clean,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        timeout=60,
+        check=False,
+    ).stdout
+    return [line for line in out.splitlines() if line.strip()]
+
+
+def _not_json(lines: list[str]) -> list[str]:
+    bad = []
+    for line in lines:
+        try:
+            json.loads(line)
+        except ValueError:
+            bad.append(line)
+    return bad
 
 
 def _json_lines(out: str) -> list[dict[str, object]]:
@@ -336,3 +376,89 @@ def test_entrypoint_block_configures_logging_then_exits_on_bad_env(
     handler = logging.getLogger().handlers[0]
     assert isinstance(handler.formatter, lc.JsonFormatter)
     assert handler.formatter.service == "kidde-collector"
+
+
+class TestEveryLineIsJson:
+    """Config is read at import, before configure_logging(); its warnings must still be JSON."""
+
+    def test_import_time_config_warnings_are_json(self) -> None:
+        # The prod template's own URL (.env.example) is cleartext to a remote host, and an
+        # out-of-range interval: both warn while config is imported.
+        lines = _docker_logs(
+            KIDDE_COLLECTOR_INFLUXDB_URL="http://influxdb.example.com:8086",
+            KIDDE_COLLECTOR_FETCH_INTERVAL_SECONDS="5",
+            **_SECRETS,
+        )
+        assert _not_json(lines) == []
+        warnings = [
+            str(json.loads(line)["message"])
+            for line in lines
+            if json.loads(line)["level"] == "WARNING"
+        ]
+        assert any("cleartext" in w for w in warnings)
+        assert any("out of range" in w for w in warnings)
+
+    def test_bad_influxdb_url_says_why_it_exits(self) -> None:
+        lines = _docker_logs(KIDDE_COLLECTOR_INFLUXDB_URL="influx:8086", **_SECRETS)
+        assert _not_json(lines) == []
+        messages = [str(json.loads(line)["message"]) for line in lines]
+        assert any(
+            "Startup aborted: Invalid InfluxDB URL format" in m for m in messages
+        )
+
+    def test_url_credentials_never_reach_the_log(self) -> None:
+        lines = _docker_logs(
+            KIDDE_COLLECTOR_INFLUXDB_URL="http://admin:not-a-real-url-pass@127.0.0.1:1",
+            **_SECRETS,
+        )
+        joined = "\n".join(lines)
+        assert "not-a-real-url-pass" not in joined and "admin" not in joined
+        assert "***@127.0.0.1:1" in joined
+        for secret in ("not-a-real-token", "not-a-real-password", "me@example.com"):
+            assert secret not in joined
+
+
+@pytest.fixture
+async def kidde_login_500() -> Iterator[str]:
+    async def login(request: web.Request) -> web.Response:
+        await request.json()
+        resp = web.Response(status=500, text="boom")
+        resp.set_cookie("kidde_session", "not-a-real-cookie")
+        return resp
+
+    app = web.Application()
+    app.router.add_post("/api/v4/auth/login", login)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", 0)
+    await site.start()
+    port = runner.addresses[0][1]
+    yield f"http://127.0.0.1:{port}/api/v4/auth/login"
+    await runner.cleanup()
+
+
+async def test_login_failure_traceback_carries_no_credentials(
+    kidde_login_500: str,
+    stream: io.StringIO,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """logger.exception logs the login failure's traceback: never the credentials or cookie."""
+    from app.collector import client
+    from app.collector.session import KiddeSession
+
+    monkeypatch.setattr(client.KiddeAPIEndpoints, "LOGIN", kidde_login_500)
+    monkeypatch.setattr(config, "COOKIES_DIR", tmp_path)
+    monkeypatch.setattr(config, "KIDDE_USERNAME", "me@example.com")
+    monkeypatch.setattr(config, "KIDDE_PASSWORD", "not-a-real-password")
+    _configure()
+    session = KiddeSession()
+    await session.connect()
+    try:
+        assert await session.get_client() is None
+    finally:
+        await session.close()
+    out = stream.getvalue()
+    assert "HTTP error 500" in out and '"exception"' in out
+    for secret in ("not-a-real-password", "me@example.com", "not-a-real-cookie"):
+        assert secret not in out

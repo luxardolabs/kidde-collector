@@ -87,6 +87,21 @@ class TestValidateEnvironment:
         assert "not-a-real-token" not in logged
         assert "INFO" in logged, "non-sensitive settings must still be visible"
 
+    def test_unset_setting_is_shown_as_unset_not_masked(self, monkeypatch, caplog):
+        """An unset secret must read as unset, not as `****` (which looks configured)."""
+        import logging
+
+        monkeypatch.setattr(config, "REQUIRED_ENV_VARS", [])
+        monkeypatch.setattr(
+            config,
+            "describe_settings",
+            lambda: {"KIDDE_COLLECTOR_KIDDE_PASSWORD": "None"},
+        )
+        with caplog.at_level(logging.INFO):
+            validate_environment()
+        logged = " ".join(r.getMessage() for r in caplog.records)
+        assert "KIDDE_COLLECTOR_KIDDE_PASSWORD: <unset>" in logged
+
 
 class FakeStorage:
     def __init__(self):

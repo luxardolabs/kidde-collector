@@ -184,7 +184,9 @@ class TestGetClient:
         finally:
             await session.close()
 
-    async def test_unexpected_error_returns_none_not_raises(self, session, monkeypatch):
+    async def test_unexpected_error_returns_none_not_raises(
+        self, session, monkeypatch, caplog
+    ):
         """The resilience contract: a login blowing up skips the cycle, never kills the process."""
         await session.connect()
         monkeypatch.setattr(config, "KIDDE_USERNAME", "u")
@@ -198,6 +200,9 @@ class TestGetClient:
             assert await session.get_client() is None
         finally:
             await session.close()
+        failed = [r for r in caplog.records if r.levelname == "ERROR"]
+        assert failed and failed[0].exc_info is not None, "the traceback must be logged"
+        assert isinstance(failed[0].exc_info[1], OSError)
 
     async def test_corrupt_cookie_file_returns_none_not_raises(
         self, session, monkeypatch
