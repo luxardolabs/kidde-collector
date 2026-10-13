@@ -111,7 +111,7 @@ PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
         demo-up demo-down demo-clean demo-logs demo-ps \
         check-prod-node prod-init prod-sync prod-deploy prod-status prod-logs-remote prod-health prod-rollback \
         poetry-lock poetry-update poetry-install \
-        test-build lint mypy format test arch audit test-e2e harness-build \
+        test-build lint mypy format test arch audit test-e2e test-release-gates harness-build \
         guard-version-check guard-upgrade honest check plan status gh-release \
         gitleaks gitleaks-staged install-hooks clean clean-all
 
@@ -1226,6 +1226,9 @@ audit: ## Dependency-vuln scan via luxaudit (pinned; poetry.lock vs live OSV+PyP
 test-e2e: build-local harness-build ## Hardware-free end-to-end test: fake Kidde endpoint -> collector -> InfluxDB
 	./scripts/e2e-test.sh
 
+test-release-gates: ## Prove the publish targets refuse before any push (stub docker; nothing leaves the host)
+	./scripts/release-gates-test.sh
+
 guard-version-check: ## FATAL: fail the gate if any fleet guard pin is behind the published latest
 	@reg="$(LUXARCH_REGISTRY)"; \
 	if [ -z "$$reg" ]; then echo "guard-version-check: registry unset (Makefile.local) — skipping"; exit 0; fi; \
@@ -1274,7 +1277,7 @@ honest: ## Honesty gate — fail if a guard family scanned nothing or the type l
 # Order: pin drift -> honesty -> ruff -> types -> tests -> architecture -> dep CVEs -> secrets.
 # It is a GATE, not a report: Make stops at the first failing step. For the full red board at
 # once, run `make plan` (luxarch --plan) — reds phase-ordered and clustered by file.
-check: guard-version-check honest lint mypy test arch audit gitleaks ## THE fleet gate — run before every commit
+check: guard-version-check honest lint mypy test test-release-gates arch audit gitleaks ## THE fleet gate — run before every commit
 
 plan: ## The full luxarch red board at once — phase-ordered, clustered by file (the worklist)
 	@if [ -z "$(LUXARCH_REGISTRY)" ]; then echo "luxarch: LUXARCH_REGISTRY unset — skipping"; exit 0; fi; \

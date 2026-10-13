@@ -41,7 +41,7 @@ make format        # THE canonical fixer, in place: ruff --fix + ruff format + m
 make arch          # luxarch: architecture conformance
 make audit         # luxaudit: dependency-CVE scan (live OSV + PyPA feed)
 make gitleaks      # full-history secret scan (also wired to fire on every commit/push)
-make check         # THE fleet gate: version-check + honesty + lint + mypy + test + arch + audit + secret scan
+make check         # THE fleet gate: version-check + honesty + lint + mypy + test + release gates + arch + audit + secret scan
 make plan          # the full luxarch board at once — reds, sweeps and audit items
 make status        # regenerate the committed .lux*-status.json guard-status files
 make guard-upgrade # bump every guard pin to latest (prints what newly bites)

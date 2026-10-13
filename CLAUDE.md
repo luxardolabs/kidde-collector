@@ -60,7 +60,8 @@ make format          # THE canonical fixer, in place: ruff --fix + ruff format +
 make test            # THE suite (emitted test block): the Dockerfile test stage, a real InfluxDB per run, branch-coverage ratchet
 make arch            # luxarch: architecture conformance (pinned, mount-only)
 make audit           # luxaudit: dependency-CVE scan against the live OSV + PyPA feed
-make check           # THE fleet gate: guard-version-check honest lint mypy test arch audit gitleaks
+make test-release-gates  # the publish targets refuse before any push (stub docker, nothing leaves the host)
+make check           # THE fleet gate: guard-version-check honest lint mypy test test-release-gates arch audit gitleaks
 make plan            # the full luxarch red board at once — the worklist (`make check` stops at the first red)
 make status          # regenerate the committed .lux*-status.json guard-status files
 make guard-upgrade   # bump every guard pin to latest (prints what newly bites)
