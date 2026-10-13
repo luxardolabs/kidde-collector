@@ -46,7 +46,6 @@ htmlcov/
 .ruff.local.toml
 .luxlint.mypy.ini
 .luxlint.pytest.ini
-.test-image.stamp
 
 # --- Editors / OS ---
 .DS_Store
