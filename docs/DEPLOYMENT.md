@@ -7,11 +7,10 @@ How to deploy the collector — from a single `docker run` to a remote productio
 Published multi-arch (linux/amd64 + linux/arm64) to the GitHub Container Registry:
 
 ```
-ghcr.io/luxardolabs/kidde-collector:latest      # rolling
-ghcr.io/luxardolabs/kidde-collector:2026.09.0    # pinned (immutable per version)
+ghcr.io/luxardolabs/kidde-collector:2026.10.2    # pinned (immutable per version)
 ```
 
-Pin a specific `:<version>` in production so a deploy is reproducible; `:latest` always points at the newest release. The image runs as a non-root user (`appuser`, uid 1000) and has no build tooling in it.
+Pin a specific `:<version>`: every release publishes only its immutable version tag. `:latest` is no longer published and stays frozen at 2026.10.2, so a stack still on `:latest` will not get newer releases. Move it to a version tag. The image runs as a non-root user (`appuser`, uid 1000) and has no build tooling in it.
 
 ## The run stacks (one compose.yml, five profiles)
 
@@ -76,7 +75,7 @@ make prod-init    PROD_NODE=collector01.example.com
 # push compose.yml + .env.prod to the node (repo is the source of truth)
 make prod-sync    PROD_NODE=collector01.example.com
 
-# pull :latest and (re)create the container on the node
+# pull the TAG pinned in .env.prod and (re)create the container on the node
 make prod-deploy  PROD_NODE=collector01.example.com
 ```
 
@@ -99,4 +98,4 @@ The deploy dir on the node (`/opt/kidde-collector` by default) holds only `compo
 
 ## Upgrading
 
-Bump the pinned tag (or pull `:latest`) and recreate: `make prod-deploy PROD_NODE=…`. Released `:<version>` tags are immutable, so a pinned deploy never changes under you.
+Bump the pinned `TAG` in `.env.prod` and recreate: `make prod-deploy PROD_NODE=…`. Released `:<version>` tags are immutable, so a pinned deploy never changes under you.

@@ -1,6 +1,6 @@
-# Runtime image build context. The Dockerfile COPYs `app/` (base) and `tests/`
-# (dev stage) explicitly, so exclude everything that must never enter an image
-# or would bust the build cache. Dockerfile.lint uses its own .dockerignore.
+# Runtime image build context. The Dockerfile COPYs only `app/` (production); the test
+# stage mounts the source at run instead of baking it. Exclude everything that must never
+# enter an image or would bust the build cache.
 
 # Git
 .git

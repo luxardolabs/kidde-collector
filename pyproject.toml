@@ -44,7 +44,7 @@ packages = ["app"]
 [tool.poetry]
 package-mode = false
 
-# The dev group exists for ONE consumer: the pytest suite (Dockerfile.test installs
+# The dev group exists for ONE consumer: the pytest suite (the Dockerfile's test stage installs
 # `--with dev`). ruff, mypy and the types-* stubs are deliberately NOT here — luxlint runs
 # ruff and mypy inside its own pinned image against the mounted repo (`make lint` /
 # `make mypy` are mount-only), so a copy in this group is never invoked by any make target

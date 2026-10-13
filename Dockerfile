@@ -1,8 +1,9 @@
 # =============================================================================
 # kidde-collector — multi-stage image (fleet standard)
-#   --target base : runtime only (prod pulls :latest / :VERSION)
-#   --target dev  : base + dev deps + baked tests (dev stack pulls :dev; lint/test
-#                   images derive from it). See Makefile dev-build-push / release.
+#   --target production : runtime only (what release / publish-sha push; stacks pin
+#                         :VERSION or :sha-<commit>)
+#   --target test       : production + the dev group, for `make test` (built locally by
+#                         test-build, never pushed; the source is mounted at run).
 # All dependency versions (runtime AND dev tooling) come from poetry.lock, so the
 # lint/type/test tooling is pinned and reproducible — never an ad-hoc pip install.
 # =============================================================================
@@ -31,12 +32,12 @@ WORKDIR /app
 COPY pyproject.toml poetry.lock* ./
 RUN /opt/poetry/bin/poetry install --no-root --only main
 
-# ---- Stage 1b: builder-dev — add the dev group (ruff/mypy/pytest, pinned) ----
+# ---- Stage 1b: builder-dev — add the dev group (pytest, coverage; pinned) ----
 FROM builder AS builder-dev
 RUN /opt/poetry/bin/poetry install --no-root --with dev
 
-# ---- Stage 2: base — lean runtime image (prod) ------------------------------
-FROM python:3.14-slim AS base
+# ---- Stage 2: production — lean runtime image ---------------------------------
+FROM python:3.14-slim AS production
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
@@ -100,17 +101,13 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 
 CMD ["python3", "-m", "app.main"]
 
-# ---- Stage 3: dev — base + dev tooling + baked tests (dev stack / lint / test)
-FROM base AS dev
+# ---- Stage 3: test — production + the dev group (pytest, coverage), for `make test`
+# The SAME app layers production ships, plus the dev group pinned by poetry.lock. Tests and
+# config are NOT baked: the test block mounts the current source read-only, so a code edit
+# needs no rebuild and the suite never runs stale code.
+FROM production AS test
 
 USER root
-# Overlay the dev-group site-packages (ruff/mypy/pytest, pinned by poetry.lock)
-# on top of the runtime deps. No ad-hoc pip install — versions match pyproject.
 COPY --from=builder-dev /usr/local/lib/python3.14/site-packages/ /usr/local/lib/python3.14/site-packages/
 COPY --from=builder-dev /usr/local/bin/ /usr/local/bin/
-
-# Bake tests + current tool config so `make test` / `make lint` are self-contained.
-COPY --chown=appuser:appuser tests /app/tests
-COPY --chown=appuser:appuser pyproject.toml /app/pyproject.toml
-
 USER appuser

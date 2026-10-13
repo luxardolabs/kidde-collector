@@ -46,7 +46,7 @@ make plan          # the full luxarch board at once — reds, sweeps and audit i
 make status        # regenerate the committed .lux*-status.json guard-status files
 make guard-upgrade # bump every guard pin to latest (prints what newly bites)
 make poetry-lock   # regenerate poetry.lock (poetry-in-docker; no host poetry needed)
-make release       # build + push :VERSION + :latest (multi-arch) to the private registry
+make release       # build + scan + push :VERSION (multi-arch) to the private registry, then the GitHub Release
 
 # Run directly (after setting env; see Configuration)
 python -m app.main

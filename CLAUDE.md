@@ -57,7 +57,7 @@ make dev-up          # dev stack: real Kidde account + bundled InfluxDB + Grafan
 make lint            # luxlint: canonical ruff + the code-style/doc/secret-config checks (mount-only)
 make mypy            # luxlint type leg: mypy, fleet stubs baked (mount-only; its OWN gate step)
 make format          # THE canonical fixer, in place: ruff --fix + ruff format + markdown
-make test            # THE suite (emitted test block): lock-built test image, a real InfluxDB per run, branch-coverage ratchet
+make test            # THE suite (emitted test block): the Dockerfile test stage, a real InfluxDB per run, branch-coverage ratchet
 make arch            # luxarch: architecture conformance (pinned, mount-only)
 make audit           # luxaudit: dependency-CVE scan against the live OSV + PyPA feed
 make check           # THE fleet gate: guard-version-check honest lint mypy test arch audit gitleaks
@@ -65,14 +65,14 @@ make plan            # the full luxarch red board at once — the worklist (`mak
 make status          # regenerate the committed .lux*-status.json guard-status files
 make guard-upgrade   # bump every guard pin to latest (prints what newly bites)
 make poetry-lock     # regenerate poetry.lock (poetry-in-docker; no host poetry needed)
-make release         # build + push :VERSION + :latest (multi-arch) to the private registry
+make release         # build + scan + push :VERSION (multi-arch) to the private registry, then the GitHub Release
 
 # Run directly (after setting env; see Configuration)
 python -m app.main
 python -m app.health.check   # container healthcheck
 ```
 
-Dependencies are managed with **Poetry** as the dependency manager; the **build backend is hatchling** and `VERSION` is the single version source (`dynamic = ["version"]`), so nothing else carries a version literal. There is no `requirements.txt`. `make lint`/`make mypy` are **mount-only** — they run inside the pinned luxlint image against the source, so the repo installs no ruff/mypy of its own; `make test` builds a lean image from `poetry.lock`, starts a throwaway InfluxDB (`kidde_influxdb_test`, profile `test`) in its own compose project, and mounts CURRENT source read-only (never exec into the baked container — stale code). Only **Grafana** is published to the host, on Grafana's default `3000` — InfluxDB stays on the compose network, so it can never collide. If 3000 is taken on your machine, override `GRAFANA_PORT` locally; the shipped default stays 3000.
+Dependencies are managed with **Poetry** as the dependency manager; the **build backend is hatchling** and `VERSION` is the single version source (`dynamic = ["version"]`), so nothing else carries a version literal. There is no `requirements.txt`. `make lint`/`make mypy` are **mount-only** — they run inside the pinned luxlint image against the source, so the repo installs no ruff/mypy of its own; `make test` builds the Dockerfile's `test` stage (deps from `poetry.lock`), starts a throwaway InfluxDB (`kidde_influxdb_test`, profile `test`) in its own compose project, and mounts CURRENT source read-only (never exec into the baked container — stale code). Only **Grafana** is published to the host, on Grafana's default `3000` — InfluxDB stays on the compose network, so it can never collide. If 3000 is taken on your machine, override `GRAFANA_PORT` locally; the shipped default stays 3000.
 
 ## Architecture Overview
 
@@ -133,7 +133,7 @@ Required: `INFLUXDB_URL`, `INFLUXDB_TOKEN`, `INFLUXDB_ORG`, `INFLUXDB_BUCKET`, `
 1. **API base URL is env-overridable** (`KIDDE_COLLECTOR_API_BASE_URL`) so the dev/demo/e2e stacks can target the harness emulator instead of the real cloud.
 1. **InfluxDB writes** use the asyncio-native `InfluxDBClientAsync` (fleet ingestion standard): opened in `connect()` inside the loop, `ping()` fails fast on an unreachable server, and each poll cycle's points are one awaited batch write (no Rx thread, no buffer to flush; gzip on). Auth/bucket errors (401/404) log actionable guidance and keep retrying.
 1. **Error handling**: the loop continues despite individual failures — check logs.
-1. **Docker**: four-stage `Dockerfile` (builder → builder-dev → base → dev). Prod pins the released `TAG=<version>` in `.env.prod`; the local dev/demo stacks build the runtime image. Lint/type checks run mount-only against the source (no app image); `make test` builds a lean `Dockerfile.test` image from `poetry.lock` and mounts the source — neither inherits `:dev`. `make release` is multi-arch. It first runs `make audit` (the lock scan; the image scan only refuses fixable HIGH/CRITICAL), refuses a dirty tree (gitignored files under `app/` included), an already-released `:VERSION`, and a `v$(VERSION)` tag that is not at HEAD on origin, and checks the release notes and `gh` before any push. Then it pushes a `candidate-<commit>`, scans every platform with luxaudit, refuses if the candidate moved during the scan, promotes `:VERSION` + `:latest`, and publishes the GitHub Release (`make gh-release`). `version-build-push` is the same path without `:latest` or the Release.
+1. **Docker**: four-stage `Dockerfile` (builder → builder-dev → production → test). Publishing goes through the emitted image block (`luxarch --emit image-block`, never hand-edited). `make publish-sha` builds, scans and pushes `:sha-<commit>`, plus the `:dev` alias. `make dev-deploy` does that, pins `.env.dev`'s `TAG=` to it, restarts the stack and runs `make smoke`, which checks that the `kidde-collector` container runs this build and stays healthy. `make dev-pin TAG=…` is the rollback path. `make release` refuses a dirty tree, an already-released `:VERSION` and a `v$(VERSION)` tag that is not at HEAD, and checks `gh` and the release notes. Then it pushes a multi-arch `candidate-<commit>`, scans every platform by digest, creates `:VERSION` from that digest and publishes the GitHub Release. No `:latest` is pushed, because a deployable never rolls. Prod pins `TAG=<version>` in `.env.prod`. `make release-public` rescans the released `:VERSION` and copies it to GHCR by digest. Two repo gates run in front of `release`, `publish-sha` and `release-public` as prerequisites: `make audit` (the lock scan, since the image scan only refuses fixable HIGH/CRITICAL) and `release-context-clean`, which refuses gitignored files under `app/`. `make test` builds the Dockerfile's `test` stage (`kidde-collector:test`, local and never pushed) and mounts the current source. Lint and type checks run mount-only, with no app image.
 1. **NO AI attribution** in commits/PRs (house rule — no Co-Authored-By, "Generated with", robot emoji).
 
 Migration/alignment chunks are tracked as LuxPM issues (project `KIDDECOLLE`).

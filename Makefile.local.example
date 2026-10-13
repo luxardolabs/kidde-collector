@@ -3,8 +3,8 @@
 # defaults, so these `?=` assignments win.
 #
 # The private registry host is intentionally kept OUT of this public repo. Without a
-# Makefile.local, registry-dependent targets (release / dev-build-push / lint / format /
-# arch / test-e2e) no-op or skip; build-local + the compose stacks (public GHCR image) still work.
+# Makefile.local, registry-dependent targets (release / publish-sha / lint / format /
+# arch / test-e2e) refuse or skip; build-local + the compose stacks still work.
 
 REGISTRY ?= docker.your-registry.example:5000
 LUXARCH_REGISTRY ?= docker.your-registry.example:5000
