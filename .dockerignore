@@ -22,10 +22,13 @@ ENV/
 .coverage
 htmlcov/
 
-# Secrets / env — must NEVER enter the image (only .env.example is harmless)
-.env
-.env.*
+# Secrets / env — must NEVER enter the image, at ANY depth: a bare `.env.*` matches only at the
+# context root, so a gitignored app/.env.local shipped inside app/ (only .env.example is harmless)
+**/.env
+**/.env.*
 !.env.example
+# Editor backups beside source (app/config.py~ would ship a stale copy of the code)
+**/*~
 
 # Runtime output + quarantined legacy files (bind-mounted / local-only, never baked)
 **/output/

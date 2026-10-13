@@ -8,8 +8,6 @@
 
 VERSION := $(shell cat VERSION 2>/dev/null || git -c safe.directory=$(CURDIR) describe --tags --always 2>/dev/null || echo "0.0.0-dev")
 TIMESTAMP := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-# The same 12-character commit the image block tags `sha-<commit>` with, so BUILD_COMMIT matches it.
-COMMIT := $(shell git -c safe.directory=$(CURDIR) rev-parse --short=12 HEAD 2>/dev/null || echo 'local')
 
 # Private registry host stays OUT of this public repo — set it in gitignored Makefile.local
 # (see Makefile.local.example). Without it, registry-dependent targets (release / publish-sha /
@@ -26,7 +24,9 @@ IMAGE_NAME := luxardolabs/kidde-collector
 LOCAL_IMAGE   := $(notdir $(IMAGE_NAME)):local
 FAKE_IMAGE    := $(notdir $(IMAGE_NAME))-fake:local
 
-BUILD_ARGS := --build-arg BUILD_VERSION=$(VERSION) \
+# Recursive (`=`), so BUILD_COMMIT reads the image block's COMMIT, the one its `sha-<commit>` tag
+# uses: a second, separately computed COMMIT here labelled images with a commit the tag did not name.
+BUILD_ARGS = --build-arg BUILD_VERSION=$(VERSION) \
               --build-arg BUILD_TIMESTAMP=$(TIMESTAMP) \
               --build-arg BUILD_COMMIT=$(COMMIT)
 
@@ -76,8 +76,10 @@ LUXLINT_IMAGE    := $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 # out-of-tree pattern as LUXARCH_REGISTRY / LUXLINT_REGISTRY.
 LUXAUDIT_REGISTRY ?=
 LUXAUDIT_VERSION  := 0.14.0
-LUXAUDIT_IMAGE    := $(LUXAUDIT_REGISTRY)/luxardolabs/luxaudit:$(LUXAUDIT_VERSION)
-POETRY_RUN := docker run --rm -u $(REPO_UID):$(REPO_GID) -e HOME=/tmp -v $(PWD):/work -w /work python:3.14-slim sh -c
+# Empty without the registry, never a hostless `/luxardolabs/…` ref: the image block's
+# require_scanner then refuses before anything is built or pushed.
+LUXAUDIT_IMAGE    := $(if $(LUXAUDIT_REGISTRY),$(LUXAUDIT_REGISTRY)/luxardolabs/luxaudit:$(LUXAUDIT_VERSION))
+POETRY_RUN := docker run --rm -u $(REPO_UID):$(REPO_GID) -e HOME=/tmp -v $(CURDIR):/work -w /work python:3.14-slim sh -c
 POETRY_PIP := python -m venv /tmp/v && /tmp/v/bin/pip install -q --root-user-action=ignore $(POETRY_SPEC)
 
 # ONE compose.yml (repo.compose_conventions). Stacks differ by PROFILE, environments by
@@ -101,7 +103,7 @@ PROD_DIR  ?= /opt/kidde-collector
 PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
 
 .PHONY: help version \
-        build-local publish-sha release release-public release-context-clean buildx-setup \
+        build-local publish-sha release release-context-clean buildx-setup \
         dev-deploy dev-pin smoke docker-inspect docker-clean \
         up down restart logs ps shell \
         dev-up dev-down dev-clean dev-logs dev-ps dev-shell \
@@ -172,13 +174,35 @@ harness-build: ## Build the fake-Kidde emulator image from ./harness (outside co
 build-local: ## Build the runtime image from CURRENT source as a local tag (no push, no registry)
 	docker build $(NO_CACHE_FLAG) --target production -f Dockerfile $(BUILD_ARGS) -t $(LOCAL_IMAGE) .
 
+# Image-block settings (above the block). REGISTRY comes from the gitignored Makefile.local; the
+# release goes to the same private registry, and PUBLIC_REGISTRY adds the GHCR copy (release-public).
+# PLATFORMS: the public image runs on arm64 hosts too, so the release is multi-arch.
+PLATFORMS       ?= linux/amd64,linux/arm64
+PUBLIC_REGISTRY ?= ghcr.io
+
 # ── Release gates this repo adds IN FRONT of the image block (prerequisites, never recipe edits) ─
 # The lock audit gates every push: the block's candidate scan only refuses fixable HIGH/CRITICAL in
 # the image, and a MEDIUM CVE in a locked package (multidict CVE-2026-104874 in 2026.10.0) passes it.
 # `git status --porcelain` does not list gitignored files, but the build context holds them: a
 # session-cookie dump under app/ would pass the block's dirty-tree check and ship. So refuse any
-# ignored file under app/ (what the Dockerfile COPYs) except the caches .dockerignore drops.
-release publish-sha release-public: audit release-context-clean
+# ignored file under app/ (what the Dockerfile COPYs) except the caches .dockerignore drops, and
+# any tracked file git has been told to stop looking at (skip-worktree / assume-unchanged): its
+# local edit is invisible to `git status` but still in the build context.
+PUBLISH_GOALS := release publish-sha release-public dev-deploy
+release publish-sha: audit release-context-clean
+ifneq ($(strip $(PUBLIC_REGISTRY)),)
+release-public: audit release-context-clean
+endif
+
+# The gates are separate targets, and `make -i` (or an `i` in MAKEFLAGS, which every sub-make such
+# as dev-deploy's inherits) ignores a failing prerequisite and runs the push recipe anyway. The
+# block survives -i by refusing inside its one shell; these cannot, so publishing under -i is
+# refused before anything runs.
+ifneq ($(filter $(PUBLISH_GOALS),$(MAKECMDGOALS)),)
+ifneq ($(findstring i,$(firstword -$(MAKEFLAGS))),)
+$(error REFUSING: make -i ignores a failing release gate (audit, release-context-clean), so nothing would stop the push. Publish without -i)
+endif
+endif
 
 release-context-clean:
 	@ign=$$(git ls-files --others --ignored --exclude-standard -- app) || { \
@@ -189,13 +213,16 @@ release-context-clean:
 	  printf '%s\n' "$$ign" | sed 's/^/    /'; \
 	  echo "Remove them (or add them to .dockerignore) before publishing."; \
 	  exit 1; \
+	fi; \
+	flags=$$(git ls-files -v) || { \
+	  echo "REFUSING: git ls-files -v failed, so nothing proves no tracked file is hidden from git status"; exit 1; }; \
+	hidden=$$(printf '%s\n' "$$flags" | grep -E '^([a-z]|S) ' || true); \
+	if [ -n "$$hidden" ]; then \
+	  echo "REFUSING: tracked files are marked skip-worktree/assume-unchanged, so a local edit to them ships unseen:"; \
+	  printf '%s\n' "$$hidden" | sed 's/^/    /'; \
+	  echo "Clear them (git update-index --no-skip-worktree / --no-assume-unchanged <path>) before publishing."; \
+	  exit 1; \
 	fi
-
-# Image-block settings (above the block). REGISTRY comes from the gitignored Makefile.local; the
-# release goes to the same private registry, and PUBLIC_REGISTRY adds the GHCR copy (release-public).
-# PLATFORMS: the public image runs on arm64 hosts too, so the release is multi-arch.
-PLATFORMS       ?= linux/amd64,linux/arm64
-PUBLIC_REGISTRY ?= ghcr.io
 
 # luxarch:image-block asset v16 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit image-block`.
 # ── Images: ONE naming scheme, and the NAME declares what the image IS ──────────────────────────
@@ -772,6 +799,8 @@ test-build: ## Build the LOCAL test image from source (never pushed, never a dep
 # build (the image's revision label) and stay healthy by its own HEALTHCHECK.
 SMOKE_CONTAINERS ?= kidde-collector
 SMOKE_STATIC_PATH ?=
+# The collector's entry point is app.main, which the default `app/*_main.py` glob does not match.
+SMOKE_ENTRY_MODULES ?= app.main
 
 # luxarch:smoke asset v8 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit smoke`.
 # ── Smoke: probe the DEPLOYED stack from outside, after every dev deploy ──────────────────────────
@@ -1066,7 +1095,7 @@ poetry-install: ## Verify deps resolve + install cleanly from poetry.lock (docke
 lint: ## luxlint (ruff + the canonical checks, mount-only). Needs LUXLINT_REGISTRY (Makefile.local).
 	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \
 	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping lint"; \
-	else docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE); fi
+	else docker run --rm -v $(CURDIR):/repo $(LUXLINT_IMAGE); fi
 
 # The type leg is its OWN gate step (repo.makefile_canonical). Since luxlint 0.2x it is
 # mount-only like ruff — the fleet's typed-dependency union is baked into the image, so
@@ -1074,12 +1103,12 @@ lint: ## luxlint (ruff + the canonical checks, mount-only). Needs LUXLINT_REGIST
 mypy: ## mypy via luxlint (fleet stubs baked, mount-only). Needs LUXLINT_REGISTRY.
 	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \
 	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping mypy"; \
-	else docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --mypy; fi
+	else docker run --rm -v $(CURDIR):/repo $(LUXLINT_IMAGE) --mypy; fi
 
 format: ## Apply the CANONICAL fixer in place: ruff check --fix + ruff format + markdown. Needs LUXLINT_REGISTRY.
 	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \
 	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping format"; \
-	else docker run --rm --user $(REPO_UID):$(REPO_GID) -v $(PWD):/repo $(LUXLINT_IMAGE) --format; fi
+	else docker run --rm --user $(REPO_UID):$(REPO_GID) -v $(CURDIR):/repo $(LUXLINT_IMAGE) --format; fi
 
 # Test-block settings: the suite runs against a REAL InfluxDB (compose service `kidde_influxdb_test`,
 # profile `test`), never a mock (repo.test_stack_parity). .env.e2e is committed and fills the
@@ -1187,12 +1216,12 @@ test: test-build ## THE suite: test image, an isolated stack of real services, c
 arch: ## Architecture conformance via luxarch (pinned; reads .luxarch.toml). Needs LUXARCH_REGISTRY (Makefile.local).
 	@if [ -z "$(LUXARCH_REGISTRY)" ]; then \
 	  echo "luxarch: LUXARCH_REGISTRY unset (see Makefile.local.example) — skipping arch"; \
-	else docker run --rm -v $(PWD):/repo $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION); fi
+	else docker run --rm -v $(CURDIR):/repo $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION); fi
 
 audit: ## Dependency-vuln scan via luxaudit (pinned; poetry.lock vs live OSV+PyPA feed). Needs LUXAUDIT_REGISTRY (Makefile.local).
 	@if [ -z "$(LUXAUDIT_REGISTRY)" ]; then \
-	  echo "luxaudit: LUXAUDIT_REGISTRY unset (see Makefile.local.example) — skipping audit"; \
-	else docker run --rm -v $(PWD):/repo $(LUXAUDIT_IMAGE); fi
+	  $(if $(filter $(PUBLISH_GOALS),$(MAKECMDGOALS)),echo "REFUSING: LUXAUDIT_REGISTRY unset (see Makefile.local.example) so the lock audit that gates a publish cannot run"; exit 1,echo "luxaudit: LUXAUDIT_REGISTRY unset (see Makefile.local.example) — skipping audit"); \
+	else docker run --rm -v $(CURDIR):/repo $(LUXAUDIT_IMAGE); fi
 
 test-e2e: build-local harness-build ## Hardware-free end-to-end test: fake Kidde endpoint -> collector -> InfluxDB
 	./scripts/e2e-test.sh
@@ -1238,8 +1267,8 @@ guard-upgrade:  ## Bump every guard pin to the published latest (prints what new
 honest: ## Honesty gate — fail if a guard family scanned nothing or the type leg is dishonest
 	@if [ -z "$(LUXARCH_REGISTRY)" ] || [ -z "$(LUXLINT_REGISTRY)" ]; then \
 	  echo "honest: guard registry unset (Makefile.local) — skipping"; exit 0; fi
-	@docker run --rm -v $(PWD):/repo $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION) --assert-scans
-	@docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --preflight
+	@docker run --rm -v $(CURDIR):/repo $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION) --assert-scans
+	@docker run --rm -v $(CURDIR):/repo $(LUXLINT_IMAGE) --preflight
 
 # THE fleet gate — byte-identical composition across every repo (repo.makefile_canonical).
 # Order: pin drift -> honesty -> ruff -> types -> tests -> architecture -> dep CVEs -> secrets.
@@ -1249,7 +1278,7 @@ check: guard-version-check honest lint mypy test arch audit gitleaks ## THE flee
 
 plan: ## The full luxarch red board at once — phase-ordered, clustered by file (the worklist)
 	@if [ -z "$(LUXARCH_REGISTRY)" ]; then echo "luxarch: LUXARCH_REGISTRY unset — skipping"; exit 0; fi; \
-	docker run --rm -v $(PWD):/repo $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION) --plan
+	docker run --rm -v $(CURDIR):/repo $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION) --plan
 
 # Committed guard-status files: the fleet READS these instead of re-running every guard on
 # every repo (luxarch --doc FLEET-STATUS). They are guard-generated lockfiles, never
@@ -1267,9 +1296,9 @@ status: ## Regenerate the committed guard-status files (.lux*-status.json) — t
 	  echo "status: guard registry unset (Makefile.local) — skipping"; exit 0; fi
 	@set -e; export SHA=$$(git rev-parse HEAD) TS=$$(date -u +%FT%TZ); \
 	J=$$(mktemp); trap 'rm -f "$$J"' EXIT INT TERM; \
-	docker run --rm -v $(PWD):/repo $(LUXLINT_IMAGE) --json > "$$J" || true; $(STAMP) "$$J" .luxlint-status.json luxlint; \
-	docker run --rm -v $(PWD):/repo -e LUXARCH_STATUS_WRITE=1 $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION) --json > "$$J" || true; $(STAMP) "$$J" .luxarch-status.json luxarch; \
-	docker run --rm -v $(PWD):/repo $(LUXAUDIT_IMAGE) --json > "$$J" || true; $(STAMP) "$$J" .luxaudit-status.json luxaudit; \
+	docker run --rm -v $(CURDIR):/repo $(LUXLINT_IMAGE) --json > "$$J" || true; $(STAMP) "$$J" .luxlint-status.json luxlint; \
+	docker run --rm -v $(CURDIR):/repo -e LUXARCH_STATUS_WRITE=1 $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION) --json > "$$J" || true; $(STAMP) "$$J" .luxarch-status.json luxarch; \
+	docker run --rm -v $(CURDIR):/repo $(LUXAUDIT_IMAGE) --json > "$$J" || true; $(STAMP) "$$J" .luxaudit-status.json luxaudit; \
 	echo "wrote .lux*-status.json at $$SHA — commit them"
 
 # The asset reads the luxlint image as $(LUXLINT); the gitleaks mirror lives beside it.

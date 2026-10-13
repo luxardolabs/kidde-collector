@@ -88,9 +88,9 @@ The Dockerfile stamps these from its `BUILD_*` build args and the collector echo
 
 ## Health Check
 
-| Variable                               | Default | Min | Max  | Description                                                                                       |
-| -------------------------------------- | ------- | --- | ---- | ------------------------------------------------------------------------------------------------- |
-| `KIDDE_COLLECTOR_HEALTH_CHECK_MAX_AGE` | `300`   | 30  | 3600 | When raw capture is enabled, max age (s) of the capture file for the container to report healthy. |
+| Variable                               | Default | Min | Max  | Description                                                                                                                                           |
+| -------------------------------------- | ------- | --- | ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `KIDDE_COLLECTOR_HEALTH_CHECK_MAX_AGE` | `300`   | 30  | 3600 | Max age (s) of the last successful cycle (one whose InfluxDB write landed) for the container to report healthy; never less than three poll intervals. |
 
 ## Data Model
 

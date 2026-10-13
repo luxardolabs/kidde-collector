@@ -181,20 +181,20 @@ class TestWrite:
     async def test_no_points_is_a_noop(self, monkeypatch):
         api = FakeWriteApi()
         s = _storage(monkeypatch, api)
-        await s._write([])
+        assert await s._write([]) is True
         assert api.calls == []
 
     async def test_no_write_api_is_a_noop(self, monkeypatch):
         """Never write before connect() — must return quietly, not AttributeError."""
         s = _storage(monkeypatch, None)
-        await s._write(InfluxDBStorage._device_points(DEVICE, "Tyle"))
+        assert await s._write(InfluxDBStorage._device_points(DEVICE, "Tyle")) is False
 
     async def test_points_sent_as_one_batch(self, monkeypatch):
         """The poll cycle IS the batch — one awaited write per cycle, not one per point."""
         api = FakeWriteApi()
         s = _storage(monkeypatch, api)
         points = InfluxDBStorage._device_points(DEVICE, "Tyle")
-        await s._write(points)
+        assert await s._write(points) is True
         assert len(api.calls) == 1
         assert api.calls[0]["record"] == points
         assert api.calls[0]["bucket"] == "bucket"
@@ -203,13 +203,19 @@ class TestWrite:
     async def test_influx_error_is_logged_not_raised(self, monkeypatch):
         api = FakeWriteApi(raises=InfluxDBError(response=FakeResponse(401)))
         s = _storage(monkeypatch, api)
-        await s._write(InfluxDBStorage._device_points(DEVICE, "Tyle"))
+        assert await s._write(InfluxDBStorage._device_points(DEVICE, "Tyle")) is False
+
+    async def test_partial_write_still_counts_as_landed(self, monkeypatch):
+        """422 persisted the valid points: the cycle reached InfluxDB (the heartbeat's proof)."""
+        api = FakeWriteApi(raises=InfluxDBError(response=FakeResponse(422)))
+        s = _storage(monkeypatch, api)
+        assert await s._write(InfluxDBStorage._device_points(DEVICE, "Tyle")) is True
 
     async def test_transport_error_is_logged_not_raised(self, monkeypatch):
         """A dropped batch self-heals next cycle — it must never propagate into the loop."""
         api = FakeWriteApi(raises=OSError("connection reset"))
         s = _storage(monkeypatch, api)
-        await s._write(InfluxDBStorage._device_points(DEVICE, "Tyle"))
+        assert await s._write(InfluxDBStorage._device_points(DEVICE, "Tyle")) is False
 
 
 class TestWriteErrorGuidance:
@@ -244,7 +250,10 @@ class TestWriteDataset:
     async def test_empty_dataset_writes_nothing(self, monkeypatch):
         api = FakeWriteApi()
         s = _storage(monkeypatch, api)
-        await s.write_dataset(KiddeDataset(locations={}, devices=None, events=None))
+        landed = await s.write_dataset(
+            KiddeDataset(locations={}, devices=None, events=None)
+        )
+        assert landed is True
         assert api.calls == []
 
     async def test_device_is_tagged_with_its_location_label(self, monkeypatch):

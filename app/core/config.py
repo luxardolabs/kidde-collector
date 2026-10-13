@@ -196,7 +196,9 @@ LIVENESS_FIELDS = ["last_seen", "lost", "offline", "contact_lost", "battery_stat
 # Logging
 LOG_LEVEL = get_env_log_level("KIDDE_COLLECTOR_LOG_LEVEL", "INFO")
 
-# Health check: max age (s) of the raw-capture file when capture is enabled
+# Health check: the heartbeat file the poller touches in EXPORT_FOLDER after every cycle whose
+# InfluxDB write succeeded, and its max age (s) for the container to report healthy
+HEARTBEAT_FILENAME = ".last_success"
 HEALTH_CHECK_MAX_AGE = get_env_int(
     "KIDDE_COLLECTOR_HEALTH_CHECK_MAX_AGE", 300, min_val=30, max_val=3600
 )

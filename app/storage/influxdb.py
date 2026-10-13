@@ -135,27 +135,33 @@ class InfluxDBStorage:
             self.client = None
             self.write_api = None
 
-    async def write_dataset(self, data: KiddeDataset) -> None:
-        """Write every device in the dataset — one awaited batch for the poll cycle."""
+    async def write_dataset(self, data: KiddeDataset) -> bool:
+        """Write every device in the dataset — one awaited batch for the poll cycle.
+
+        Returns whether the cycle's points reached InfluxDB (the health heartbeat's proof);
+        an account with no devices has nothing to write and counts as reached.
+        """
         if not data.devices:
             logger.debug("No devices in dataset; nothing to write")
-            return
+            return True
 
         points: list[Point] = []
         for device in data.devices.values():
             location = data.locations.get(device["location_id"], {})
             points.extend(self._device_points(device, location.get("label", "")))
-        await self._write(points)
+        return await self._write(points)
 
-    async def _write(self, points: list[Point]) -> None:
+    async def _write(self, points: list[Point]) -> bool:
         """Write the cycle's points in a single awaited request.
 
         Tolerates InfluxDB partial writes: if a numeric field ever disagrees on type
         across devices, InfluxDB returns 422 while still persisting the valid points —
-        logged as a warning, not a cycle failure.
+        logged as a warning, not a cycle failure. Returns whether the write landed.
         """
-        if not points or self.write_api is None:
-            return
+        if self.write_api is None:
+            return False
+        if not points:
+            return True
         try:
             if logger.isEnabledFor(logging.DEBUG):
                 for point in points:
@@ -164,6 +170,7 @@ class InfluxDBStorage:
             logger.debug("Wrote %d points to InfluxDB", len(points))
         except InfluxDBError as e:
             self._log_write_error(e)
+            return getattr(getattr(e, "response", None), "status", None) == 422
         # swallowed-exceptions: a failed write is logged with its traceback and the cycle ends;
         # the poll loop retries on the next interval. This collector is a sampler, not a
         # ledger — points are re-derived every cycle, so a dropped batch self-heals rather
@@ -171,6 +178,8 @@ class InfluxDBStorage:
         # above with actionable guidance; this arm is the transport/unknown catch-all.
         except Exception as e:
             logger.exception("Error writing to InfluxDB: %s", e)
+            return False
+        return True
 
     @staticmethod
     def _log_write_error(error: InfluxDBError) -> None:

@@ -32,11 +32,13 @@ class FakeSession:
 class FakeStorage:
     """Stand-in for InfluxDBStorage that records what it was asked to write."""
 
-    def __init__(self):
+    def __init__(self, lands=True):
         self.written = []
+        self.lands = lands
 
     async def write_dataset(self, data):
         self.written.append(data)
+        return self.lands
 
 
 class FakeClient:
@@ -74,6 +76,47 @@ class TestInit:
         monkeypatch.setattr(config, "EXPORT_FOLDER", str(blocker / "out"))
         with pytest.raises(RuntimeError, match="Error creating export directory"):
             KiddeCollector(FakeSession(), FakeStorage())
+
+
+class TestHeartbeat:
+    """The poller's half of the health contract (app.health.check reads the file)."""
+
+    def _heartbeat(self, tmp_path):
+        return tmp_path / "out" / config.HEARTBEAT_FILENAME
+
+    async def test_a_landed_write_touches_the_heartbeat(
+        self, collector, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(config, "WRITE_API_DATA", False)
+        collector.session = FakeSession(FakeClient(dataset()))
+        await collector._collect_once()
+        assert self._heartbeat(tmp_path).exists()
+
+    async def test_a_failed_write_leaves_no_heartbeat(
+        self, collector, tmp_path, monkeypatch
+    ):
+        """InfluxDB down: the cycle 'completes' but proves nothing, so health stays unproven."""
+        monkeypatch.setattr(config, "WRITE_API_DATA", False)
+        collector.storage = FakeStorage(lands=False)
+        collector.session = FakeSession(FakeClient(dataset()))
+        await collector._collect_once()
+        assert not self._heartbeat(tmp_path).exists()
+
+    async def test_a_failed_login_leaves_no_heartbeat(self, collector, tmp_path):
+        with pytest.raises(RuntimeError):
+            await collector._collect_once()
+        assert not self._heartbeat(tmp_path).exists()
+
+    def test_startup_clears_the_previous_containers_heartbeat(
+        self, tmp_path, monkeypatch
+    ):
+        """The export folder is a persistent volume: an old heartbeat must not vouch for a new build."""
+        out = tmp_path / "out"
+        out.mkdir()
+        (out / config.HEARTBEAT_FILENAME).touch()
+        monkeypatch.setattr(config, "EXPORT_FOLDER", str(out))
+        KiddeCollector(FakeSession(), FakeStorage())
+        assert not (out / config.HEARTBEAT_FILENAME).exists()
 
 
 class TestCollectOnce:

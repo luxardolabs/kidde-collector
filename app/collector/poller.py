@@ -36,6 +36,11 @@ class KiddeCollector:
         except Exception as e:
             logger.exception("Error creating export directory: %s", e)
             raise RuntimeError(f"Error creating export directory: {e}") from e
+        # The export folder is a persistent volume, so a heartbeat left by the PREVIOUS
+        # container would vouch for this one until it aged out: a new build that cannot log
+        # in would report healthy through a deploy's smoke. Health starts unproven.
+        self._heartbeat = Path(config.EXPORT_FOLDER) / config.HEARTBEAT_FILENAME
+        self._heartbeat.unlink(missing_ok=True)
         logger.info("KiddeCollector initialized")
 
     async def run(self, shutdown_event: asyncio.Event) -> None:
@@ -79,7 +84,9 @@ class KiddeCollector:
         if config.WRITE_API_DATA:
             await self._dump_raw(asdict(data))
 
-        await self.storage.write_dataset(data)
+        # Only a cycle that reached InfluxDB proves the collector works (app.health.check).
+        if await self.storage.write_dataset(data):
+            await asyncio.to_thread(self._heartbeat.touch)
         logger.info("Processed %d devices", len(data.devices or {}))
 
     async def _dump_raw(self, serializable_data: dict[str, Any]) -> None:

@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """Docker health check for kidde-collector (see the Dockerfile HEALTHCHECK).
 
-Two strategies:
-  - When raw capture is enabled (KIDDE_COLLECTOR_WRITE_API_DATA=true), verify the
-    daily ``api_data_<date>.json`` capture file is fresh.
-  - Otherwise (the common case) verify the process/interpreter is alive.
+Healthy means the collector WORKS, not that its process is alive: the poller touches a
+heartbeat file in the export folder after every cycle whose InfluxDB write succeeded, and the
+check requires it to be fresh. The poll loop survives every failure by design (a Kidde login
+error, an InfluxDB outage), so a process-alive check reported a collector that wrote nothing
+for hours as healthy, and a deploy's smoke probe passed a build that could not log in.
+
+The allowed age is KIDDE_COLLECTOR_HEALTH_CHECK_MAX_AGE, and never less than three poll
+intervals, so a long KIDDE_COLLECTOR_FETCH_INTERVAL_SECONDS cannot fail a working collector.
 
 Exit 0 = healthy, 1 = unhealthy.
 """
@@ -14,6 +18,8 @@ import os
 import sys
 from datetime import timedelta
 from pathlib import Path
+
+from app.core.config import HEARTBEAT_FILENAME
 
 
 def _int_env(key: str, default: int, lo: int, hi: int) -> int:
@@ -25,56 +31,44 @@ def _int_env(key: str, default: int, lo: int, hi: int) -> int:
     return max(lo, min(hi, value))
 
 
-MAX_AGE_SECONDS = _int_env("KIDDE_COLLECTOR_HEALTH_CHECK_MAX_AGE", 300, 30, 3600)
+MAX_AGE_SECONDS = max(
+    _int_env("KIDDE_COLLECTOR_HEALTH_CHECK_MAX_AGE", 300, 30, 3600),
+    3 * _int_env("KIDDE_COLLECTOR_FETCH_INTERVAL_SECONDS", 60, 10, 3600),
+)
 OUTPUT_DIR = os.getenv("KIDDE_COLLECTOR_EXPORT_FOLDER", "output")
 
 
-def check_recent_capture() -> tuple[bool, str]:
-    """Verify a recent ``api_data_*.jsonl`` capture exists and is fresh."""
-    output_path = Path(OUTPUT_DIR)
-    if not output_path.exists():
-        return False, f"Output directory {OUTPUT_DIR} does not exist"
+def check_heartbeat() -> tuple[bool, str]:
+    """Verify the last successful cycle (the poller's heartbeat file) is recent."""
+    heartbeat = Path(OUTPUT_DIR) / HEARTBEAT_FILENAME
+    if not heartbeat.exists():
+        return False, f"No successful cycle yet ({heartbeat} absent)"
 
-    candidates = list(output_path.glob("api_data_*.jsonl"))
-    if not candidates:
-        return False, "No api_data_*.jsonl capture file found"
-
-    capture = max(candidates, key=lambda f: f.stat().st_mtime)
     # Both sides tz-aware (UTC). Naive local wall-clock is not monotonic: at a DST
-    # fall-back the local hour REPEATS, so a capture written at 01:30 CDT and read at
+    # fall-back the local hour REPEATS, so a heartbeat written at 01:30 CDT and read at
     # 01:30 CST (a real hour later) subtracts to 0s. That fails OPEN — a stale collector
     # reports healthy. Absolute UTC on both sides is immune.
-    file_age = datetime.datetime.now(datetime.UTC) - datetime.datetime.fromtimestamp(
-        capture.stat().st_mtime, tz=datetime.UTC
+    age = datetime.datetime.now(datetime.UTC) - datetime.datetime.fromtimestamp(
+        heartbeat.stat().st_mtime, tz=datetime.UTC
     )
-    if file_age > timedelta(seconds=MAX_AGE_SECONDS):
+    if age > timedelta(seconds=MAX_AGE_SECONDS):
         return (
             False,
-            f"Capture {capture.name} is {file_age.total_seconds():.0f}s old "
+            f"Last successful cycle {age.total_seconds():.0f}s ago "
             f"(max allowed: {MAX_AGE_SECONDS}s)",
         )
-    return True, f"Healthy - last capture update {file_age.total_seconds():.0f}s ago"
-
-
-def check_process_alive() -> tuple[bool, str]:
-    """Basic liveness — if this interpreter runs at all in the container, it's healthy."""
-    return True, "Process healthy"
+    return True, f"Healthy - last successful cycle {age.total_seconds():.0f}s ago"
 
 
 def main() -> None:
-    if os.getenv("KIDDE_COLLECTOR_WRITE_API_DATA", "false").lower() == "true":
-        is_healthy, message = check_recent_capture()
-        label = "Capture freshness"
-    else:
-        is_healthy, message = check_process_alive()
-        label = "Process check"
+    is_healthy, message = check_heartbeat()
 
     version = os.getenv("KIDDE_COLLECTOR_VERSION", "unknown")
     build_timestamp = os.getenv("KIDDE_COLLECTOR_BUILD_TIMESTAMP", "unknown")
 
     print(f"Health check: {'HEALTHY' if is_healthy else 'UNHEALTHY'}")
     print(f"Version: {version} (Built: {build_timestamp})")
-    print(f"  - {label}: {message}")
+    print(f"  - Last successful cycle: {message}")
 
     sys.exit(0 if is_healthy else 1)
 
