@@ -1,0 +1,55 @@
+# Adversarial-audit state for kidde-collector (`/adversarial-audit`, luxarch --doc
+# FLEET-ADVERSARIAL-TESTING-STANDARD). [profile] is the owner's statement of what matters;
+# [slices.*] records what was attacked, when, at which fingerprint.
+
+[profile]
+written = "2026-10-22"
+commit = "7c5dac213891c70963c10708fecf9b849c73f5b6"
+crown_jewels = [
+    "the owner's Kidde HomeSafe account: KIDDE_COLLECTOR_USERNAME / KIDDE_COLLECTOR_PASSWORD and the persisted session cookie (a live bearer credential for a life-safety account: smoke/CO detectors, home location)",
+    "the InfluxDB token (write access to the owner's bucket, often an all-access token on a homelab InfluxDB)",
+    "home location and occupancy-adjacent data: location labels, device labels, alarm/event history",
+    "integrity of the safety series: a smoke/CO alarm or a low-battery/end-of-life state silently dropped, or written as the wrong device, so the dashboard shows healthy while a detector is not",
+]
+actors = [
+    "the Kidde cloud API (and anyone able to answer as it: a misconfigured or overridden KIDDE_COLLECTOR_API_BASE_URL, a TLS-intercepting proxy) supplying hostile JSON, headers, cookies and status codes",
+    "the InfluxDB server answering writes and pings",
+    "whoever can read the container's logs, the bind-mounted output dir, or `docker inspect` (other users and containers on the host)",
+    "whoever sets the environment / .env files (operator; config mistakes are in scope, a malicious operator is not)",
+]
+boundaries = [
+    "Kidde cloud responses -> app/collector/client.py parsing -> InfluxDB point tags/fields (untrusted JSON becomes measurement keys)",
+    "session cookie persisted to and reloaded from the bind-mounted output dir (app/collector/session.py)",
+    "env vars -> app/core/config.py (URLs, credentials, intervals) and the startup settings log in app/main.py",
+    "the heartbeat file output/.last_success read by the Docker HEALTHCHECK (app/health/check.py)",
+    "the published image (Dockerfile production stage) and the release path (Makefile image block): what ships to GHCR",
+]
+hot_spots = [
+    { path = "app/collector/session.py", why = "persists and reloads the bearer cookie; past finding KIDDECOLLE-15 (world-readable cookie file)" },
+    { path = "app/collector/client.py", why = "login, 403 re-auth loop, and the parser that turns untrusted Kidde JSON into point keys; past finding KIDDECOLLE-24 (ids interpolated into URLs)" },
+    { path = "app/main.py", why = "startup settings dump: credential masking; past findings KIDDECOLLE-16 and KIDDECOLLE-60 (URL credential redaction, JSON-only logs)" },
+    { path = "app/storage/influxdb.py", why = "holds the token; auth/bucket error handling logs 'actionable guidance' that must never echo the token" },
+    { path = "Dockerfile", why = "the only thing that ships; dev tools or a writable/root runtime in it reach every deployment" },
+]
+out_of_scope = [
+    { path = "harness/fake_kidde.py", why = "test/demo emulator, never published or deployed (only the dev/demo/e2e compose profiles run it); its hygiene was handled in KIDDECOLLE-25" },
+    { path = "dev/demo bundled Grafana + InfluxDB default credentials", why = "accepted risk by owner ruling, KIDDECOLLE-31" },
+]
+history = [
+    "KIDDECOLLE-15: session cookie file written world-readable (fixed: chmod 0600)",
+    "KIDDECOLLE-16: Kidde username logged in cleartext at startup (fixed: masked)",
+    "KIDDECOLLE-23: no warning on cleartext http:// InfluxDB/API URL (fixed: warning)",
+    "KIDDECOLLE-24: endpoint URLs interpolated ids with no type check (fixed: int())",
+    "KIDDECOLLE-60: adversarial pass on 2026.10.1: release-path gates, JSON-only startup logs, URL credential redaction (fixed in 2026.10.2)",
+    "KIDDECOLLE-31: dev/demo stacks on 0.0.0.0 with default creds (accepted risk)",
+]
+
+[profile.surface] # copied verbatim from `luxarch --sweep attack-surface` at 7c5dac2
+routes = 0
+anon = 0
+money = 0
+credential = 0
+upload = 0
+webhook = 0
+mounts = 0
+jobs = 0

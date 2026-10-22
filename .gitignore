@@ -79,3 +79,6 @@ Thumbs.db
 .claude/.luxpm-search-terms.json
 .claude/hooks/__pycache__/
 .claude/worktrees/
+
+# adversarial-audit run reproductions: one machine's local cache, never committed
+/.adversarial-audit/
