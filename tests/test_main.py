@@ -5,18 +5,57 @@ password and the InfluxDB token out of the startup log, and `validate_environmen
 fail-fast that stops the collector booting into a half-configured state.
 """
 
+import logging
+
 import pytest
 
 from app.core import config
 from app.main import _obscure, validate_environment
 
 
+class TestStartupLogSecrets:
+    """The password and token are credentials: the log says they are set, nothing more."""
+
+    def _shown(self, monkeypatch, caplog, name, value):
+        monkeypatch.setattr(config, "REQUIRED_ENV_VARS", [])
+        monkeypatch.setattr(config, name, value)
+        caplog.clear()
+        with caplog.at_level(logging.INFO):
+            validate_environment()
+        (line,) = [
+            r.getMessage()
+            for r in caplog.records
+            if f"KIDDE_COLLECTOR_{name}:" in r.getMessage()
+        ]
+        return line.split(": ", 1)[1]
+
+    @pytest.mark.parametrize("name", ["KIDDE_PASSWORD", "INFLUXDB_TOKEN"])
+    @pytest.mark.parametrize(
+        "value", ["Pa55w", "Pa55w0rd", "a-much-longer-secret-value"]
+    )
+    def test_no_character_or_length_of_a_credential_is_logged(
+        self, monkeypatch, caplog, name, value
+    ):
+        """Any characters or the exact length would narrow a short password to a guess."""
+        shown = self._shown(monkeypatch, caplog, name, value)
+        assert shown == "****"
+
+    def test_an_unset_credential_still_says_unset(self, monkeypatch, caplog):
+        assert self._shown(monkeypatch, caplog, "KIDDE_PASSWORD", None) == "<unset>"
+
+    def test_the_username_is_partially_masked(self, monkeypatch, caplog):
+        shown = self._shown(monkeypatch, caplog, "KIDDE_USERNAME", "owner@example.com")
+        assert shown == "ow*************om"
+
+
 class TestObscure:
-    def test_long_secret_keeps_only_the_ends(self):
+    """Partial masking, kept for the username (an identifier, not a credential)."""
+
+    def test_long_value_keeps_only_the_ends(self):
         assert _obscure("supersecretvalue") == "su************ue"
 
     def test_masked_length_matches_the_original(self):
-        """The mask must not leak the secret's length by being a fixed width."""
+        """The mask is as long as the value: an operator can tell which account it is."""
         for secret in ("abcdefgh", "abcdefghijklmnop"):
             assert len(_obscure(secret)) == len(secret)
 

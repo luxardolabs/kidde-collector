@@ -44,7 +44,7 @@ def live(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
 def _query(settings: dict[str, str], serial: str) -> dict[str, object]:
     flux = (
         f'from(bucket: "{settings["bucket"]}") |> range(start: -1h) '
-        f'|> filter(fn: (r) => r._measurement == "kidde_collector_device" '
+        f'|> filter(fn: (r) => r._measurement == "{config.MEASUREMENT_DEVICE}" '
         f'and r.serial_number == "{serial}")'
     )
     # The sync client reads back: the async query API needs the optional aiocsv extra.
@@ -90,6 +90,66 @@ async def test_dataset_lands_in_a_real_influxdb(live: dict[str, str]) -> None:
     assert fields["smoke_alarm"] is False
     assert fields["co2_value"] == 922.37
     assert fields["co2_status"] == "Good"
+
+
+async def _write(data: KiddeDataset) -> bool:
+    storage = InfluxDBStorage()
+    await storage.connect()
+    try:
+        return await storage.write_dataset(data)
+    finally:
+        await storage.close()
+
+
+def _device(serial: str, **extra: object) -> dict[str, object]:
+    return {
+        "id": hash(serial) % 1_000_000,
+        "serial_number": serial,
+        "location_id": 7,
+        "label": "Hall",
+        "smoke_alarm": False,
+        **extra,
+    }
+
+
+@pytest.mark.parametrize("conflict", [True, False])
+async def test_a_field_type_conflict_is_not_reported_as_landed(
+    live: dict[str, str], monkeypatch: pytest.MonkeyPatch, conflict: bool
+) -> None:
+    """InfluxDB answers a field type conflict with 422 and drops the WHOLE line, this
+    detector's smoke_alarm included, so the heartbeat must not vouch for that cycle."""
+    # A measurement of its own: field types persist on the server across tests.
+    monkeypatch.setattr(
+        config, "MEASUREMENT_DEVICE", f"kidde_conflict_{uuid.uuid4().hex[:8]}"
+    )
+    first, second = (f"LIVE{uuid.uuid4().hex[:8].upper()}" for _ in range(2))
+    locations = {7: {"id": 7, "label": "Live Home"}}
+    assert await _write(
+        KiddeDataset(locations, {1: _device(first, alarm_state=True)}, None)
+    )
+
+    drifted = _device(second, smoke_alarm=True, alarm_state=1 if conflict else False)
+    landed = await _write(KiddeDataset(locations, {2: drifted}, None))
+
+    stored = _query(live, second)
+    assert landed is not conflict
+    assert ("smoke_alarm" in stored) is not conflict
+
+
+@pytest.mark.parametrize("label", ["Hall\\", "Hall"])
+async def test_a_trailing_backslash_label_is_stored_without_mangling(
+    live: dict[str, str], label: str
+) -> None:
+    """A trailing backslash would escape the tag separator; the label is stored "Hall"."""
+    serial = f"LIVE{uuid.uuid4().hex[:8].upper()}"
+    await _write(
+        KiddeDataset(
+            {7: {"id": 7, "label": "Live Home"}},
+            {1: _device(serial, label=label)},
+            None,
+        )
+    )
+    assert _query(live, serial)["label"] == "Hall"
 
 
 async def test_connect_fails_fast_on_an_unreachable_server(

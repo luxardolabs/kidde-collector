@@ -22,7 +22,9 @@ Work through these in order:
 
 - Double-check `KIDDE_COLLECTOR_KIDDE_USERNAME` / `_KIDDE_PASSWORD` — they're the same credentials as the Kidde HomeSafe app.
 - If you changed your Kidde password, update the env file and restart.
+- A rejected login logs `Kidde rejected the login (N in a row)` and the collector **backs off** before trying again: 60 seconds, doubling per rejection up to an hour, so a wrong password cannot get the account throttled or locked. A restart retries straight away.
 - The collector logs in once and caches the session cookie in `output/`; a `403` clears it and forces a clean re-login on the next cycle. An occasional 403 → re-auth is normal, not an error.
+- An unreadable cookie file (truncated by a crash or a full disk) is logged as `Cookie cache … is unreadable`, deleted, and replaced by a fresh login in the same cycle. There is nothing to clean up by hand.
 
 ## A device shows offline / stopped reporting measurements
 
@@ -50,6 +52,16 @@ Temperature is stored as Kidde reports it (°F). Converting only the value break
 ## InfluxDB "unauthorized" / "bucket not found" in the logs
 
 The collector logs actionable guidance on 401 (bad token) and 404 (bad org/bucket) and keeps retrying. Fix `KIDDE_COLLECTOR_INFLUXDB_TOKEN` / `_ORG` / `_BUCKET` in your env file and restart.
+
+## "InfluxDB rejected whole points on a field type conflict" / the container is unhealthy
+
+InfluxDB stores each field with the type of its first write. If Kidde later sends that field as a different type (a boolean where a number was stored, or text), InfluxDB answers `422` and drops **every line** carrying it, so those detectors, alarm fields included, are not written. The collector logs the field name at ERROR and does not count the cycle as landed, so the container reports unhealthy while any detector goes unwritten.
+
+To recover, write the field to a new measurement (`KIDDE_COLLECTOR_MEASUREMENT_DEVICE`), or delete the conflicting field's series from the bucket, then restart.
+
+## "Device … not written: malformed record"
+
+A device record from Kidde was missing an identity field (`id`, `serial_number`, `location_id` or `label`). That one device is skipped; every other device is still written, and the cycle is not counted as landed, so the container reports unhealthy until Kidde returns a complete record.
 
 ## Nothing works and I want to see the raw API
 

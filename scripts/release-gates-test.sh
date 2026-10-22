@@ -34,11 +34,14 @@ echo "gh $*" >> "$STUB_LOG"; case "$1 $2" in "release view") exit 1;; esac; exit
 STUB
 chmod +x "$T/bin/docker" "$T/bin/gh"
 
-REG="REGISTRY=fake.invalid:5000 LUXAUDIT_REGISTRY=fake.invalid:5000 LUXARCH_REGISTRY= LUXLINT_REGISTRY="
+REG="LUXARCH_REGISTRY= LUXLINT_REGISTRY="
 
+# The registries come from the clone's gitignored Makefile.local, as in a real checkout: the
+# image block (v19) refuses a REGISTRY passed on the command line or from the shell.
 fresh() {
   rm -rf "$T/repo"
   git clone -q "$REPO" "$T/repo" && git -C "$T/repo" checkout -q "$REF" || exit 2
+  printf 'REGISTRY := fake.invalid:5000\nLUXAUDIT_REGISTRY := fake.invalid:5000\n' > "$T/repo/Makefile.local"
   : > "$T/stub.log"
 }
 
@@ -80,7 +83,9 @@ if printf 'FROM scratch\nCOPY app /app\n' | (cd "$T/repo" && "$REAL_DOCKER" buil
   else echo "PASS  app/.env.local is excluded from the build context"; fi
 else echo "NOT RUN  build-context check (docker build failed here)"; fi
 
-fresh; run "no audit registry refuses instead of skipping" publish-sha REGISTRY=fake.invalid:5000 LUXAUDIT_REGISTRY= LUXARCH_REGISTRY= LUXLINT_REGISTRY=
+# LUXAUDIT_REGISTRY= on the command line outranks one exported in the caller's shell.
+fresh; printf 'REGISTRY := fake.invalid:5000\n' > "$T/repo/Makefile.local"
+run "no audit registry refuses instead of skipping" publish-sha $REG LUXAUDIT_REGISTRY=
 expect_refused "so the lock audit that gates a publish cannot run"
 
 fresh; echo '# local edit' >> "$T/repo/app/core/config.py"; git -C "$T/repo" update-index --skip-worktree app/core/config.py

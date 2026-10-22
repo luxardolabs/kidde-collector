@@ -114,6 +114,15 @@ class TestOfflineDevice:
         assert "label=Loft" in line
         assert "serial_number=001372CBA9C4" in line
 
+    def test_offline_skips_a_liveness_field_that_is_not_a_scalar(self):
+        line = _line(
+            InfluxDBStorage._device_points(
+                {**OFFLINE_DEVICE, "battery_state": None}, "Tyle"
+            )[0]
+        )
+        assert "battery_state" not in line
+        assert "online=false" in line.lower()
+
     def test_offline_writes_last_seen_age(self):
         line = _line(InfluxDBStorage._device_points(OFFLINE_DEVICE, "Tyle")[0])
         assert "last_seen_age_seconds=" in line  # numeric age for staleness coloring
@@ -205,11 +214,12 @@ class TestWrite:
         s = _storage(monkeypatch, api)
         assert await s._write(InfluxDBStorage._device_points(DEVICE, "Tyle")) is False
 
-    async def test_partial_write_still_counts_as_landed(self, monkeypatch):
-        """422 persisted the valid points: the cycle reached InfluxDB (the heartbeat's proof)."""
+    async def test_partial_write_is_not_landed(self, monkeypatch):
+        """A 422 rejects whole points (a detector's alarm fields with them), so the
+        heartbeat must not vouch for that cycle."""
         api = FakeWriteApi(raises=InfluxDBError(response=FakeResponse(422)))
         s = _storage(monkeypatch, api)
-        assert await s._write(InfluxDBStorage._device_points(DEVICE, "Tyle")) is True
+        assert await s._write(InfluxDBStorage._device_points(DEVICE, "Tyle")) is False
 
     async def test_transport_error_is_logged_not_raised(self, monkeypatch):
         """A dropped batch self-heals next cycle — it must never propagate into the loop."""
@@ -234,12 +244,22 @@ class TestWriteErrorGuidance:
         with caplog.at_level(logging.ERROR):
             assert "404" in self._messages(caplog, 404)
 
-    def test_422_is_a_warning_not_an_error(self, caplog):
-        """A partial write persisted the valid points — a cycle warning, not a failure."""
+    def test_422_is_an_error_naming_the_conflicting_field(self, caplog):
+        """InfluxDB drops every line holding the conflicting field, not just the field."""
+        body = (
+            b'{"message": "partial write: field type conflict: input field '
+            b'\\"alarm_state\\" on measurement \\"kidde_collector_device\\" is type '
+            b'float, already exists as type boolean dropped=1"}'
+        )
         caplog.clear()
         with caplog.at_level(logging.DEBUG):
-            InfluxDBStorage._log_write_error(InfluxDBError(response=FakeResponse(422)))
-        assert [r.levelno for r in caplog.records] == [logging.WARNING]
+            InfluxDBStorage._log_write_error(
+                InfluxDBError(response=FakeResponse(422, body))
+            )
+        (record,) = caplog.records
+        assert record.levelno == logging.ERROR
+        assert "alarm_state" in record.getMessage()
+        assert "whole points" in record.getMessage()
 
     def test_unknown_status_still_reports(self, caplog):
         with caplog.at_level(logging.ERROR):
@@ -277,6 +297,49 @@ class TestWriteDataset:
             KiddeDataset(locations={}, devices={553549: DEVICE}, events=None)
         )
         assert len(api.calls) == 1
+
+    @pytest.mark.parametrize("missing", ["id", "label", "serial_number", "location_id"])
+    async def test_a_malformed_device_does_not_drop_the_others(
+        self, monkeypatch, caplog, missing
+    ):
+        """One device missing an identity key costs that device, not every detector, and
+        the cycle does not count as landed while a device went unwritten."""
+        api = FakeWriteApi()
+        s = _storage(monkeypatch, api)
+        broken = {**DEVICE, "id": 2, "serial_number": "BROKEN"}
+        del broken[missing]
+        with caplog.at_level(logging.ERROR):
+            landed = await s.write_dataset(
+                KiddeDataset(
+                    locations={356103: {"id": 356103, "label": "Tyle"}},
+                    devices={553549: DEVICE, 2: broken},
+                    events=None,
+                )
+            )
+        assert landed is False
+        written = {p._tags.get("serial_number") for p in api.calls[0]["record"]}
+        assert written == {"001372CBA9BD"}
+        assert any(missing in r.getMessage() for r in caplog.records)
+
+
+class TestTagValues:
+    @pytest.mark.parametrize("label", ["Hall\\", "Hall\\\\", "Hall \\"])
+    def test_a_trailing_backslash_is_stripped_from_a_tag(self, label):
+        """Line protocol cannot carry a trailing backslash: it escapes the next separator,
+        so the server would store "Hall\\" as "Hall " (a silently renamed series)."""
+        (main, *_) = InfluxDBStorage._device_points({**DEVICE, "label": label}, "Tyle")
+        assert main._tags["label"] == label.rstrip("\\")
+
+    def test_a_null_tag_is_omitted_not_written_as_the_string_none(self):
+        """A device Kidde reports with a null label or serial keeps its series: no "None"."""
+        device = {**DEVICE, "label": None, "serial_number": None}
+        main = _line(InfluxDBStorage._device_points(device, "Tyle")[0])
+        assert "None" not in main.split(" ", 1)[0]
+        assert ",label=" not in main and ",serial_number=" not in main
+
+    def test_an_ordinary_label_is_unchanged(self):
+        (main, *_) = InfluxDBStorage._device_points(DEVICE, "Tyle")
+        assert main._tags["label"] == "Basement"
 
 
 class TestCloseClient:

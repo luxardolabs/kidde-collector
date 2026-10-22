@@ -22,11 +22,15 @@ from app.storage.influxdb import InfluxDBStorage
 # aggregator would see that instead of where the line came from.
 logger = logging.getLogger("app.main")
 
-_SENSITIVE = ("PASSWORD", "TOKEN", "USERNAME")
+# Credentials are logged as a fixed mask: any characters or the exact length would narrow
+# a short password to a guess. The username is an identifier, partially masked.
+_CREDENTIALS = ("PASSWORD", "TOKEN")
+_IDENTIFIERS = ("USERNAME",)
+_CREDENTIAL_MASK = "****"
 
 
 def _obscure(value: str) -> str:
-    """Partially mask a secret; fully redact values too short to partially mask."""
+    """Partially mask an identifier; fully redact values too short to partially mask."""
     if not value:
         return value
     if len(value) <= 4:
@@ -40,7 +44,9 @@ def validate_environment() -> None:
     for var, value in config.describe_settings().items():
         if value == "None":
             shown = "<unset>"
-        elif any(s in var for s in _SENSITIVE):
+        elif any(s in var for s in _CREDENTIALS):
+            shown = _CREDENTIAL_MASK if value else value
+        elif any(s in var for s in _IDENTIFIERS):
             shown = _obscure(value)
         else:
             shown = value

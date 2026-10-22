@@ -193,6 +193,12 @@ SKIP_OFFLINE_MEASUREMENTS = get_env_bool(
 OFFLINE_FLAGS = ["lost", "offline", "contact_lost"]
 LIVENESS_FIELDS = ["last_seen", "lost", "offline", "contact_lost", "battery_state"]
 
+# A login Kidde rejects (a wrong or changed password) is retried after a backoff that
+# doubles per consecutive rejection, up to the cap: each attempt is a failed login against
+# the owner's account, which Kidde may throttle or lock.
+LOGIN_BACKOFF_BASE_SECONDS = 60
+LOGIN_BACKOFF_MAX_SECONDS = 3600
+
 # Logging
 LOG_LEVEL = get_env_log_level("KIDDE_COLLECTOR_LOG_LEVEL", "INFO")
 

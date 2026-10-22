@@ -6,11 +6,18 @@ on disk, and self-heals an expired session by dropping that cache.
 """
 
 import json
+import os
+from pathlib import Path
 
+import aiofiles
 import aiohttp
 import pytest
 
-from app.collector.client import KiddeClient, KiddeClientAuthError
+from app.collector.client import (
+    KiddeClient,
+    KiddeClientAuthError,
+    KiddeLoginRejectedError,
+)
 from app.collector.session import KiddeSession
 from app.core import config
 
@@ -65,6 +72,31 @@ class TestCookieRoundTrip:
         await session.save_cookies({"sid": "abc123"})
         mode = session.cookies_file_path.stat().st_mode & 0o777
         assert mode == 0o600, f"expected 0600, got {mode:o}"
+
+    async def test_cookie_is_owner_only_even_where_chmod_fails(
+        self, session, monkeypatch
+    ):
+        """The cookie is created 0600 under the image's 0022 umask, so it is never readable
+        by others, even on a mount (CIFS/NFS) where chmod fails."""
+        session.cookies_file_path.write_text('{"sid": "stale"}')
+        session.cookies_file_path.chmod(0o644)
+
+        def refuse(*_args, **_kwargs):
+            raise PermissionError("chmod not supported on this mount")
+
+        monkeypatch.setattr(Path, "chmod", refuse)
+        monkeypatch.setattr(os, "chmod", refuse)
+        previous = os.umask(0o022)  # the production image's umask
+        try:
+            await session.save_cookies({"sid": "abc123"})
+        finally:
+            os.umask(previous)
+        mode = session.cookies_file_path.stat().st_mode & 0o777
+        assert mode == 0o600, f"expected 0600, got {mode:o}"
+        assert await session.load_cookies() == {"sid": "abc123"}
+        assert list(session.cookies_file_path.parent.iterdir()) == [
+            session.cookies_file_path
+        ], "no temp file may be left behind"
 
     async def test_save_overwrites_rather_than_appends(self, session):
         await session.save_cookies({"sid": "first"})
@@ -128,16 +160,20 @@ class TestGetClient:
         finally:
             await session.close()
 
-    async def test_missing_credentials_returns_none(self, session, monkeypatch):
+    async def test_missing_credentials_is_a_login_rejection(self, session, monkeypatch):
         await session.connect()
         monkeypatch.setattr(config, "KIDDE_USERNAME", "")
         monkeypatch.setattr(config, "KIDDE_PASSWORD", "")
         try:
-            assert await session.get_client() is None
+            with pytest.raises(KiddeLoginRejectedError):
+                await session.get_client()
         finally:
             await session.close()
 
-    async def test_auth_error_returns_none(self, session, monkeypatch):
+    async def test_a_rejected_login_raises_for_the_poller_to_back_off(
+        self, session, monkeypatch
+    ):
+        """The poller backs off on this error, so it must reach the poller, not become None."""
         await session.connect()
         monkeypatch.setattr(config, "KIDDE_USERNAME", "u")
         monkeypatch.setattr(config, "KIDDE_PASSWORD", "p")
@@ -147,7 +183,8 @@ class TestGetClient:
 
         monkeypatch.setattr(KiddeClient, "from_login", raise_auth)
         try:
-            assert await session.get_client() is None
+            with pytest.raises(KiddeLoginRejectedError):
+                await session.get_client()
         finally:
             await session.close()
 
@@ -204,13 +241,52 @@ class TestGetClient:
         assert failed and failed[0].exc_info is not None, "the traceback must be logged"
         assert isinstance(failed[0].exc_info[1], OSError)
 
-    async def test_corrupt_cookie_file_returns_none_not_raises(
-        self, session, monkeypatch
+    @pytest.mark.parametrize(
+        "content",
+        [b"{not json", b"", b"[1, 2]", b'{"sid": 7}', b'\xff\xfe{"sid": "x"}'],
+    )
+    async def test_a_corrupt_cookie_file_is_dropped_and_replaced_by_a_login(
+        self, session, monkeypatch, content
     ):
-        """A truncated/garbage cookie cache must degrade to 'no client', not crash the loop."""
+        """The cache sits on a persistent volume, so a restart keeps it: an unreadable one
+        is dropped and replaced by a login in the same call."""
         await session.connect()
-        session.cookies_file_path.write_text("{not json")
+        monkeypatch.setattr(config, "KIDDE_USERNAME", "u")
+        monkeypatch.setattr(config, "KIDDE_PASSWORD", "p")
+
+        async def fake_login(http, _username, _password):
+            return KiddeClient(http, {"sid": "fresh"})
+
+        monkeypatch.setattr(KiddeClient, "from_login", fake_login)
+        session.cookies_file_path.write_bytes(content)
         try:
-            assert await session.get_client() is None
+            client = await session.get_client()
         finally:
             await session.close()
+        assert client is not None and client.cookies == {"sid": "fresh"}
+        assert json.loads(session.cookies_file_path.read_text()) == {"sid": "fresh"}
+
+    async def test_a_cookie_file_the_process_cannot_read_is_replaced_by_a_login(
+        self, session, monkeypatch
+    ):
+        """A file left by another uid (or 0000) is dropped too: unlinking needs only the
+        directory's write permission, and a login writes a fresh one."""
+        await session.connect()
+        monkeypatch.setattr(config, "KIDDE_USERNAME", "u")
+        monkeypatch.setattr(config, "KIDDE_PASSWORD", "p")
+
+        async def fake_login(http, _username, _password):
+            return KiddeClient(http, {"sid": "fresh"})
+
+        def unreadable(*_args, **_kwargs):
+            raise PermissionError(13, "Permission denied", "cookies.json")
+
+        monkeypatch.setattr(KiddeClient, "from_login", fake_login)
+        monkeypatch.setattr(aiofiles, "open", unreadable)
+        session.cookies_file_path.write_text('{"sid": "theirs"}')
+        try:
+            client = await session.get_client()
+        finally:
+            await session.close()
+        assert client is not None and client.cookies == {"sid": "fresh"}
+        assert json.loads(session.cookies_file_path.read_text()) == {"sid": "fresh"}

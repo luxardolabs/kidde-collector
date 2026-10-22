@@ -138,25 +138,41 @@ class InfluxDBStorage:
     async def write_dataset(self, data: KiddeDataset) -> bool:
         """Write every device in the dataset — one awaited batch for the poll cycle.
 
-        Returns whether the cycle's points reached InfluxDB (the health heartbeat's proof);
-        an account with no devices has nothing to write and counts as reached.
+        Returns whether EVERY device's points reached InfluxDB (the health heartbeat's
+        proof); an account with no devices has nothing to write and counts as reached. A
+        malformed device record costs that device alone: the others are still written, and
+        the cycle reports not-landed so a detector cannot go unwritten behind a green check.
         """
         if not data.devices:
             logger.debug("No devices in dataset; nothing to write")
             return True
 
         points: list[Point] = []
-        for device in data.devices.values():
-            location = data.locations.get(device["location_id"], {})
-            points.extend(self._device_points(device, location.get("label", "")))
-        return await self._write(points)
+        skipped = 0
+        for device_id, device in data.devices.items():
+            try:
+                location = data.locations.get(device["location_id"], {})
+                points.extend(self._device_points(device, location.get("label", "")))
+            # swallowed-exceptions: one malformed record (an API change, a new device type
+            # without a serial) is logged and skipped so the other detectors are still
+            # written; the False return keeps the heartbeat from vouching for the cycle.
+            except (KeyError, TypeError, ValueError) as e:
+                skipped += 1
+                logger.exception(
+                    "Device %s not written: malformed record (%s: %s)",
+                    device_id,
+                    type(e).__name__,
+                    e,
+                )
+        return await self._write(points) and not skipped
 
     async def _write(self, points: list[Point]) -> bool:
-        """Write the cycle's points in a single awaited request.
+        """Write the cycle's points in a single awaited request; return whether they landed.
 
-        Tolerates InfluxDB partial writes: if a numeric field ever disagrees on type
-        across devices, InfluxDB returns 422 while still persisting the valid points —
-        logged as a warning, not a cycle failure. Returns whether the write landed.
+        A 422 is NOT landed. InfluxDB answers a field type conflict (one value bool or str
+        where earlier writes stored a number) by dropping every LINE that carries the field,
+        a detector's smoke_alarm and online with it, and keeps the stored type, so the drop
+        repeats each cycle. The heartbeat is touched only for a cycle that fully landed.
         """
         if self.write_api is None:
             return False
@@ -170,7 +186,7 @@ class InfluxDBStorage:
             logger.debug("Wrote %d points to InfluxDB", len(points))
         except InfluxDBError as e:
             self._log_write_error(e)
-            return getattr(getattr(e, "response", None), "status", None) == 422
+            return False
         # swallowed-exceptions: a failed write is logged with its traceback and the cycle ends;
         # the poll loop retries on the next interval. This collector is a sampler, not a
         # ledger — points are re-derived every cycle, so a dropped batch self-heals rather
@@ -195,9 +211,14 @@ class InfluxDBStorage:
                 "InfluxDB write failed (404 Not Found) — bucket or org does not exist."
             )
         elif status == 422:
-            logger.warning(
-                "InfluxDB partial write (some fields dropped on type conflict): %s",
-                getattr(error, "message", None) or error,
+            message = str(getattr(error, "message", None) or error)
+            fields = sorted(set(re.findall(r'input field "([^"]+)"', message)))
+            logger.error(
+                "InfluxDB rejected whole points on a field type conflict (field %s): every "
+                "line carrying it was dropped, so those devices went unwritten this cycle. "
+                "%s",
+                ", ".join(fields) or "unknown",
+                message,
             )
         else:
             logger.error("InfluxDB write failed: %s", error)
@@ -223,14 +244,20 @@ class InfluxDBStorage:
         Python) and strings are written as-is.
         """
 
+        def _tag(value: Any) -> str | None:
+            # Line protocol cannot carry a trailing backslash: it escapes the separator
+            # after it, so the server would store the label "Hall\" as "Hall ". A null
+            # stays None, which Point.tag omits (never the string "None").
+            return None if value is None else str(value).rstrip("\\")
+
         def _tagged() -> Point:
             return (
                 Point(config.MEASUREMENT_DEVICE)
-                .tag("id", str(device["id"]))
-                .tag("serial_number", device["serial_number"])
-                .tag("location_id", str(device["location_id"]))
-                .tag("location_label", location_label)
-                .tag("label", device["label"])
+                .tag("id", _tag(device["id"]))
+                .tag("serial_number", _tag(device["serial_number"]))
+                .tag("location_id", _tag(device["location_id"]))
+                .tag("location_label", _tag(location_label))
+                .tag("label", _tag(device["label"]))
             )
 
         def _num(value: Any) -> Any:

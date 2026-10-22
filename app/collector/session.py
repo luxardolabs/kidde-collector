@@ -8,11 +8,16 @@ session) the poller drops the cookie file so the next cycle re-authenticates.
 import asyncio
 import json
 import logging
+import os
 
 import aiofiles
 import aiohttp
 
-from app.collector.client import KiddeClient, KiddeClientAuthError
+from app.collector.client import (
+    KiddeClient,
+    KiddeClientAuthError,
+    KiddeLoginRejectedError,
+)
 from app.core import config
 
 logger = logging.getLogger(__name__)
@@ -45,7 +50,11 @@ class KiddeSession:
             self._http = None
 
     async def get_client(self) -> KiddeClient | None:
-        """Return an authenticated client, logging in + caching cookies if needed."""
+        """Return an authenticated client, logging in + caching cookies if needed.
+
+        Raises KiddeLoginRejectedError when Kidde refuses the configured credentials, so the
+        poller can back off rather than fail a login every cycle.
+        """
         if self._http is None:
             raise RuntimeError(
                 "KiddeSession.connect() must be called before get_client()"
@@ -58,16 +67,20 @@ class KiddeSession:
 
             logger.debug("No cached cookies, logging in to Kidde")
             if not config.KIDDE_USERNAME or not config.KIDDE_PASSWORD:
-                raise KiddeClientAuthError("Kidde username/password not configured")
-            client = await KiddeClient.from_login(
-                self._http, config.KIDDE_USERNAME, config.KIDDE_PASSWORD
-            )
+                raise KiddeLoginRejectedError("Kidde username/password not configured")
+            try:
+                client = await KiddeClient.from_login(
+                    self._http, config.KIDDE_USERNAME, config.KIDDE_PASSWORD
+                )
+            except KiddeClientAuthError as rejected:
+                raise KiddeLoginRejectedError(
+                    str(rejected) or "Kidde rejected the configured credentials"
+                ) from rejected
             await self.save_cookies(client.cookies)
             logger.debug("KiddeClient authenticated successfully")
             return client
-        except KiddeClientAuthError as auth_error:
-            logger.exception("Kidde authentication error: %s", auth_error)
-            return None
+        except KiddeLoginRejectedError:
+            raise
         except aiohttp.ClientResponseError as e:
             if e.status == 401:
                 logger.exception("Unauthorized (401): check Kidde credentials.")
@@ -88,21 +101,46 @@ class KiddeSession:
             logger.debug("No cookies file found")
             return None
         logger.debug("Loading cookies from %s", self.cookies_file_path)
-        # blocking-io: aiofiles.open is the ASYNC file API, not pathlib.Path.open — the
-        # read is awaited and never touches the loop's thread. Sweep matches on the method
-        # name; the receiver here is the aiofiles module.
-        async with aiofiles.open(self.cookies_file_path) as file:
-            cookies: dict[str, str] = json.loads(await file.read())
-            return cookies
+        # swallowed-exceptions: a cache this process cannot read (OSError: another uid's or
+        # a 0000 file) or cannot parse (ValueError: bad UTF-8 or bad JSON) is dropped below
+        # so this cycle logs in fresh. It sits on a persistent volume, so dropping it is the
+        # recovery: a restart keeps it.
+        try:
+            # blocking-io: aiofiles.open is the ASYNC file API, not pathlib.Path.open — the
+            # read is awaited and never touches the loop's thread. Sweep matches on the
+            # method name; the receiver here is the aiofiles module.
+            async with aiofiles.open(self.cookies_file_path, "rb") as file:
+                cookies = json.loads(await file.read())
+        except OSError, ValueError:
+            cookies = None
+        if not isinstance(cookies, dict) or not all(
+            isinstance(k, str) and isinstance(v, str) for k, v in cookies.items()
+        ):
+            logger.warning(
+                "Cookie cache %s is unreadable; dropping it and logging in fresh",
+                self.cookies_file_path,
+            )
+            self.invalidate()
+            return None
+        return cookies
 
     async def save_cookies(self, cookies: dict[str, str]) -> None:
         logger.debug("Saving cookies to %s", self.cookies_file_path)
-        # blocking-io: aiofiles.open is the ASYNC file API, not pathlib.Path.open — see load_cookies.
-        async with aiofiles.open(self.cookies_file_path, "w") as file:
-            await file.write(json.dumps(cookies))
-        # The session cookie is a live bearer credential — keep it owner-only on the
-        # bind-mounted output dir. .chmod() is a blocking syscall — off the loop.
-        await asyncio.to_thread(self.cookies_file_path.chmod, 0o600)
+        await asyncio.to_thread(self._write_owner_only, json.dumps(cookies))
+
+    def _write_owner_only(self, text: str) -> None:
+        """Write the cookie file 0600 from creation, then rename it into place.
+
+        The session cookie is a live bearer credential on a bind-mounted dir. Opened 0600, it
+        is never readable by others, even on a mount where chmod fails (CIFS/NFS); the atomic
+        rename means a crash mid-write leaves the previous file, never a truncated one.
+        """
+        tmp = self.cookies_file_path.with_name(self.cookies_file_path.name + ".tmp")
+        tmp.unlink(missing_ok=True)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as file:
+            file.write(text)
+        tmp.replace(self.cookies_file_path)
 
     def invalidate(self) -> None:
         """Drop the cached cookie file so the next cycle re-authenticates."""

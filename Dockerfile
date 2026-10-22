@@ -64,13 +64,15 @@ WORKDIR /app
 # Non-root runtime user
 RUN useradd -m -u 1000 appuser
 
-# Application code (only the package — tests/docs stay out of the runtime image)
-COPY --chown=appuser:appuser app /app/app
+# Application code (only the package — tests/docs stay out of the runtime image), owned
+# by root: the runtime user reads it but cannot rewrite it, so code execution inside the
+# process cannot plant a change that survives a restart.
+COPY app /app/app
 
-# Own the whole workdir by appuser: the output dir must exist for a clean-clone
-# build (bind-mounted at runtime, but the session cookies + capture reference
+# Only the output dir is the runtime user's: it must exist for a clean-clone build
+# (bind-mounted at runtime, but the session cookies, heartbeat and capture reference
 # ./output relative to WORKDIR when unmounted).
-RUN mkdir -p /app/output && chown -R appuser:appuser /app
+RUN mkdir -p /app/output && chown appuser:appuser /app/output
 
 USER appuser
 
