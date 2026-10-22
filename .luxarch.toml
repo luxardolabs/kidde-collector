@@ -23,3 +23,8 @@ source_client = ["collector/session.py"]   # kidde's long-lived source session
 [observability]
 enabled = false
 exempt_reason = "headless collector, no telemetry shipped: zero opentelemetry/prometheus_client dependencies and no span or tracer call in app/. Operational signal is the structured JSON log stream (app/core/logging_config.py) plus the InfluxDB series it writes, which a dashboard reads staleness from directly."
+
+# Who pushes (luxarch 0.296.0, repo.agent_push_declared). Owner ruling 2026-10-22: this repo is
+# PUBLIC on GitHub, so an agent stops at the landed commit and the owner pushes.
+[agents]
+push = "owner"

@@ -19,8 +19,9 @@ dependencies = [
     # message for a malformed response — we are a client, so a misbehaving Kidde cloud
     # endpoint or InfluxDB reaches it), CVE-2026-69243 (WebSocket-upgrade request
     # smuggling), CVE-2026-59881 (RSV1 frames decompressed without permessage-deflate).
-    # All fixed in 3.14.3.
-    "aiohttp>=3.14.3,<4.0.0",
+    # All fixed in 3.14.3. Raised to 3.14.4 for GHSA-2g87-pp6c-29x5 and
+    # CVE-2026-111063..111066 / 111748..111750 (three of them HIGH), all fixed in 3.14.4.
+    "aiohttp>=3.14.4,<4.0.0",
 ]
 
 # The fleet build backend is hatchling (repo.hatchling_build_backend) and the VERSION file

@@ -8,11 +8,15 @@ Kidde Collector is a **Python** headless data collector that bridges the **Kidde
 
 This is a Luxardo Labs fleet collector; it follows `/mnt/luxardolabs/COLLECTOR-FLEET-STANDARD.md` with **kasa-collector** as the reference implementation.
 
-<!-- luxarch:claude-pointer asset v7 - DO NOT edit this marker line; it is how repo.claude_pointer_present knows your copy is current. Re-emit with `luxarch --emit claude-pointer`. -->
+<!-- luxarch:claude-pointer asset v10 - DO NOT edit this marker line; it is how repo.claude_pointer_present knows your copy is current. Re-emit with `luxarch --emit claude-pointer`. -->
 
 ## How to work here (fleet conduct — read the standard, not just this block)
 
 **`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD` — read it in full before your first change.** It is the one home for *how* agents work in this fleet. This block is a pointer plus the handful of rules that get broken most; it is not a summary and does not replace reading it.
+
+**`luxarch …` is a Docker image, not a host command.** Run `luxarch --doc X` as `docker run --rm -v "$PWD":/repo -w /repo <image> --doc X`, where `<image>` is the Makefile's pinned `LUXARCH` image (set from `LUXARCH_VERSION`). There is no host install, and the pinned version is the one this repo's rules and docs match. `luxlint …` and `luxaudit …` are the same, with `LUXLINT` and `LUXAUDIT`.
+
+**Which agent are you?** In a repo that hosts a luxios app (a nested `apps/ios/` with its own `CLAUDE.md`, beside the backend), there are two agents. If this machine has no Docker (`command -v docker` prints nothing), you are that app's agent: read its `CLAUDE.md` first, follow the iOS reading below, and leave the root guard gates (`make check`, the luxarch, luxlint and luxaudit images) to the backend agent. Never look for a Docker binary to install.
 
 **Run `/fleet-start` at the start of every session and after every compact.** It rehydrates from LuxPM and restates the session rules.
 
@@ -36,6 +40,8 @@ When you do ask: **one decision per message**, the evidence that makes it answer
 **You touched it, you own it.** Edit a file for any reason and it has a mypy, ruff or luxarch red: fix every one in that file, not just yours. Never spend time proving a red predates you; fix it. Test what you changed first. **Before fixing any mypy red, read `luxlint --playbook mypy-sweep` in full.**
 
 **Align or escalate; never route around.** A guard red is fixed by changing the code, or escalated to the guard maintainer as genuinely wrong. Never by an exemption, a `# noqa`, a deferral, or a local config. Verification is not authorization: proving something is unreferenced does not license deleting it.
+
+**Search LuxPM for a file before you change it to clear a red.** `luxpm_list_issues(search="<path>")`, every hit read, then `git log -- <file>`. A site that is on hold, in another agent's work, or under an open escalation is skipped and named, never changed. A red moved to another file, or out of a rule's sight, is not fixed: `/wrap-up` compares the whole repo's per-rule counts.
 
 **Escalations go in THIS repo's LuxPM project** — label `fleet-escalation`, title `[<guard> ESCALATION] …`, self-contained enough to forward whole. **Search LuxPM for an existing issue first** (and comment on it if found); filing a new one is pre-authorized. **Never a GitHub issue** — there is no fallback. The maintainer sweeps the label across every project and picks it up where you filed it.
 
@@ -61,8 +67,8 @@ make test            # THE suite (emitted test block): the Dockerfile test stage
 make arch            # luxarch: architecture conformance (pinned, mount-only)
 make audit           # luxaudit: dependency-CVE scan against the live OSV + PyPA feed
 make test-release-gates  # the publish targets refuse before any push (stub docker, nothing leaves the host)
-make check           # THE fleet gate: guard-version-check honest lint mypy test test-release-gates arch audit gitleaks
-make plan            # the full luxarch red board at once — the worklist (`make check` stops at the first red)
+make check           # THE fleet gate: guard-version-check + honest, then every leg (lint mypy test test-release-gates arch audit gitleaks) runs and it fails naming each red one
+make plan            # the full luxarch red board at once — the worklist, phase-ordered and clustered by file
 make status          # regenerate the committed .lux*-status.json guard-status files
 make guard-upgrade   # bump every guard pin to latest (prints what newly bites)
 make poetry-lock     # regenerate poetry.lock (poetry-in-docker; no host poetry needed)

@@ -6,7 +6,7 @@
   "source": "poetry.lock",
   "summary": {
     "PASS": 26,
-    "FAIL": 0,
+    "FAIL": 4,
     "XFAIL": 0
   },
   "vulnerable": [],
@@ -19,9 +19,46 @@
     "inert_reason": "",
     "error": "",
     "not_released": [],
-    "vulnerable": [],
+    "vulnerable": [
+      {
+        "package": "certifi",
+        "installed": "2026.6.17",
+        "vuln_id": "GHSA-6q48-6c7w-9gw2",
+        "severity": "CRITICAL",
+        "layer": "lang",
+        "image": "luxardolabs/kidde-collector:2026.10.2",
+        "fix": "2026.10.19"
+      },
+      {
+        "package": "aiohttp",
+        "installed": "3.14.3",
+        "vuln_id": "CVE-2026-111064",
+        "severity": "HIGH",
+        "layer": "lang",
+        "image": "luxardolabs/kidde-collector:2026.10.2",
+        "fix": "3.14.4"
+      },
+      {
+        "package": "aiohttp",
+        "installed": "3.14.3",
+        "vuln_id": "CVE-2026-111066",
+        "severity": "HIGH",
+        "layer": "lang",
+        "image": "luxardolabs/kidde-collector:2026.10.2",
+        "fix": "3.14.4"
+      },
+      {
+        "package": "aiohttp",
+        "installed": "3.14.3",
+        "vuln_id": "GHSA-2g87-pp6c-29x5",
+        "severity": "HIGH",
+        "layer": "lang",
+        "image": "luxardolabs/kidde-collector:2026.10.2",
+        "fix": "3.14.4"
+      }
+    ],
     "deferred": []
   },
-  "commit": "4a7bab090f04e1d60393f23e5d987cef5bbf8231",
-  "generated_at": "2026-10-13T02:10:27Z"
+  "commit": "0e2e7da6416002e92f06cc67db84678889a687a6",
+  "generated_at": "2026-10-22T13:32:02Z"
 }
