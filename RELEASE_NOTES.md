@@ -6,6 +6,7 @@ These describe what someone running this collector would actually notice. For th
 
 | Version                                     | Highlights                                                                  |
 | ------------------------------------------- | --------------------------------------------------------------------------- |
+| [2026.10.3](app/release_notes/2026.10.3.md) | Security update, honest health check, gentler on your Kidde account         |
 | [2026.10.2](app/release_notes/2026.10.2.md) | Structured startup logs, database passwords kept out of logs                |
 | [2026.10.1](app/release_notes/2026.10.1.md) | Security update, structured logs                                            |
 | [2026.10.0](app/release_notes/2026.10.0.md) | Security update (27 vulnerabilities closed), leaner image, one compose file |
