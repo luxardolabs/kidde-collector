@@ -53,3 +53,10 @@ upload = 0
 webhook = 0
 mounts = 0
 jobs = 0
+
+[slices."entry-points"]
+fingerprint = "697fb201ef32e06606c7f1620c4d7f192b3f438d4397dde779a8b729f9dadfc5"
+commit = "308b0d6"
+date = "2026-10-22"
+epic = "KIDDECOLLE-64"
+findings = ["KIDDECOLLE-65", "KIDDECOLLE-66", "KIDDECOLLE-67", "KIDDECOLLE-68", "KIDDECOLLE-69", "KIDDECOLLE-70", "KIDDECOLLE-71", "KIDDECOLLE-72", "KIDDECOLLE-73"]
