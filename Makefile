@@ -177,8 +177,11 @@ build-local: ## Build the runtime image from CURRENT source as a local tag (no p
 # Image-block settings (above the block). REGISTRY comes from the gitignored Makefile.local; the
 # release goes to the same private registry, and PUBLIC_REGISTRY adds the GHCR copy (release-public).
 # PLATFORMS: the public image runs on arm64 hosts too, so the release is multi-arch.
+# PUBLIC_LATEST: release-public also moves GHCR's :latest to the newest release, the alias OSS users
+# pull (COLLECTOR-FLEET-STANDARD); nothing in the fleet pins it.
 PLATFORMS       ?= linux/amd64,linux/arm64
 PUBLIC_REGISTRY ?= ghcr.io
+PUBLIC_LATEST   ?= 1
 
 # ── Release gates this repo adds IN FRONT of the image block (prerequisites, never recipe edits) ─
 # The lock audit gates every push: the block's candidate scan only refuses fixable HIGH/CRITICAL in

@@ -7,10 +7,11 @@ How to deploy the collector — from a single `docker run` to a remote productio
 Published multi-arch (linux/amd64 + linux/arm64) to the GitHub Container Registry:
 
 ```
-ghcr.io/luxardolabs/kidde-collector:2026.10.2    # pinned (immutable per version)
+ghcr.io/luxardolabs/kidde-collector:2026.10.3    # pinned (immutable per version)
+ghcr.io/luxardolabs/kidde-collector:latest       # moves to each new release
 ```
 
-Pin a specific `:<version>`: every release publishes only its immutable version tag. `:latest` is no longer published and stays frozen at 2026.10.2, so a stack still on `:latest` will not get newer releases. Move it to a version tag. The image runs as a non-root user (`appuser`, uid 1000) and has no build tooling in it.
+Pin a specific `:<version>` for anything you run unattended: a version tag never changes, so a restart runs the same bits and you can roll back. `:latest` follows the newest release and is there for trying the collector out. The image runs as a non-root user (`appuser`, uid 1000) and has no build tooling in it.
 
 ## The run stacks (one compose.yml, five profiles)
 
