@@ -8,13 +8,13 @@ Kidde Collector is a **Python** headless data collector that bridges the **Kidde
 
 This is a Luxardo Labs fleet collector; it follows `/mnt/luxardolabs/COLLECTOR-FLEET-STANDARD.md` with **kasa-collector** as the reference implementation.
 
-<!-- luxarch:claude-pointer asset v10 - DO NOT edit this marker line; it is how repo.claude_pointer_present knows your copy is current. Re-emit with `luxarch --emit claude-pointer`. -->
+<!-- luxarch:claude-pointer asset v12 - DO NOT edit this marker line; it is how repo.claude_pointer_present knows your copy is current. Re-emit with `luxarch --emit claude-pointer`. -->
 
 ## How to work here (fleet conduct — read the standard, not just this block)
 
 **`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD` — read it in full before your first change.** It is the one home for *how* agents work in this fleet. This block is a pointer plus the handful of rules that get broken most; it is not a summary and does not replace reading it.
 
-**`luxarch …` is a Docker image, not a host command.** Run `luxarch --doc X` as `docker run --rm -v "$PWD":/repo -w /repo <image> --doc X`, where `<image>` is the Makefile's pinned `LUXARCH` image (set from `LUXARCH_VERSION`). There is no host install, and the pinned version is the one this repo's rules and docs match. `luxlint …` and `luxaudit …` are the same, with `LUXLINT` and `LUXAUDIT`.
+**`luxarch …` is a Docker image, not a host command.** Run `luxarch --doc X` as `docker run --rm -v <checkout>:/repo -w /repo <image> --doc X`, where `<checkout>` is the absolute path of the checkout you are in, written out (your issue's worktree when you are in one: inside a worktree Claude Code refuses a mount computed at run time, such as `"$PWD"`), and `<image>` is the Makefile's pinned `LUXARCH` image (set from `LUXARCH_VERSION`). There is no host install, and the pinned version is the one this repo's rules and docs match. `luxlint …` and `luxaudit …` are the same, with `LUXLINT` and `LUXAUDIT`.
 
 **Which agent are you?** In a repo that hosts a luxios app (a nested `apps/ios/` with its own `CLAUDE.md`, beside the backend), there are two agents. If this machine has no Docker (`command -v docker` prints nothing), you are that app's agent: read its `CLAUDE.md` first, follow the iOS reading below, and leave the root guard gates (`make check`, the luxarch, luxlint and luxaudit images) to the backend agent. Never look for a Docker binary to install.
 
@@ -28,6 +28,8 @@ This is a Luxardo Labs fleet collector; it follows `/mnt/luxardolabs/COLLECTOR-F
 - **Do it** — aligning code to a ratified standard or a guard red; anything you have evidence for that is reversible in one commit. The standard already decided; say what you did.
 
 **Work the guard reds in `luxarch --plan` order. Never ask which family or sweep is next.** The order is decided. An escalation covers ONE site: its family keeps going.
+
+**Check one rule or one file with a targeted run, never a filtered full scan.** `luxarch --rule <id>` runs only the matching rules (exact or substring, repeatable); add `--path <file>` to show one file's sites. The whole repo's per-rule counts are in `.luxarch-status.json` (`make status`). A full scan piped into `grep`, `head` or `tail` is denied by the emitted `targeted-guard-run` hook.
 
 **An owner hold is exactly as wide as the owner said.** "Hold off on X" excludes X and nothing else. It is not permission to pause, ask, or check in about anything outside X. Skip the held family, say so in one line, and keep burning down the rest.
 

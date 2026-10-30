@@ -82,3 +82,9 @@ Thumbs.db
 
 # adversarial-audit run reproductions: one machine's local cache, never committed
 /.adversarial-audit/
+
+# Claude Code hook session state (luxarch --emit hooks)
+.claude/.release-guides-read.json
+.claude/.*.lock
+.claude/.*.tmp
+.claude/.*.unreadable-*

@@ -293,6 +293,41 @@ class TestTextFormat:
         assert stream.getvalue().rstrip().endswith("INFO app.x plain")
 
 
+class TestTraceIdSource:
+    def test_ids_only_on_lines_made_inside_a_span(self, stream: io.StringIO) -> None:
+        span: list[tuple[str, str] | None] = [("t1", "s1")]
+        _configure(trace_ids=lambda: span[0])
+        logging.getLogger("app.x").info("inside")
+        span[0] = None
+        logging.getLogger("app.x").info("outside")
+        inside, outside = _lines(stream)
+        assert inside["trace_id"] == "t1" and inside["span_id"] == "s1"
+        assert "trace_id" not in outside and "span_id" not in outside
+        assert "attributes" not in inside
+
+    def test_raising_source_costs_the_ids_not_the_line(
+        self, stream: io.StringIO
+    ) -> None:
+        def broken() -> tuple[str, str]:
+            raise RuntimeError("tracer down")
+
+        _configure(trace_ids=broken)
+        logging.getLogger("app.x").info("still written")
+        (line,) = _lines(stream)
+        assert line["message"] == "still written"
+        assert "trace_id" not in line
+
+    def test_text_line_names_the_span(
+        self, stream: io.StringIO, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("LOG_FORMAT", "text")
+        _configure(trace_ids=lambda: ("t1", "s1"))
+        logging.getLogger("app.x").info("m")
+        assert (
+            stream.getvalue().rstrip().endswith("INFO app.x m trace_id=t1 span_id=s1")
+        )
+
+
 class TestLevels:
     @pytest.mark.parametrize(
         ("raw", "expected"),

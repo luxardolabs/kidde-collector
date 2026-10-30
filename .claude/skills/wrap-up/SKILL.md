@@ -3,7 +3,7 @@ name: wrap-up
 description: Close out a piece of work the fleet way before calling it done — tests written and run for what changed, every red in touched files fixed, docs updated (stale advice removed), make check green, committed in the issue's worktree, LuxPM fully closed out (issues, checklists, activities, commit links, sync receipt), then landed on the base branch, the worktree removed, and pushed as the repo declares. Every step reports evidence, not a tick.
 ---
 
-<!-- luxarch:wrap-up-skill asset v12 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit wrap-up-skill`. -->
+<!-- luxarch:wrap-up-skill asset v18 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit wrap-up-skill`. -->
 
 # Wrap up
 
@@ -38,7 +38,7 @@ A green suite is evidence only for what it can see. Four bugs in one repo passed
 
 ## 3. Every red in a file you touched, and none moved
 
-You touched it, you own it (conduct standard #11): fix every mypy, ruff and luxarch red in each changed file, not only yours, and never spend time proving one predates you. For mypy, read `luxlint --playbook mypy-sweep` in full first. Fix by aligning the code; never `type: ignore`, `cast`, `Any`, `noqa` or an exemption.
+You touched it, you own it (conduct standard #11): fix every mypy, ruff and luxarch red in each changed file, not only yours, and never spend time proving one predates you. Check a file's luxarch reds with a targeted run, `luxarch --rule <id> --path <file>` (or `--path <file>` alone over the rules that fire there), never a full scan filtered through `grep`. For mypy, read `luxlint --playbook mypy-sweep` in full first. Fix by aligning the code; never `type: ignore`, `cast`, `Any`, `noqa` or an exemption.
 
 A red can also be moved instead of fixed: the code goes to another layer, helper or consumer module, and a rule stops seeing it or another rule starts. Counting only the files you touched cannot see that. So compare the WHOLE repo. Take the base's committed status (`git show <base>:.luxarch-status.json`, and `.luxlint-status.json` the same way), run `make status` on your tree, and compare each rule's `violations` count in the two. A rule whose count rose anywhere is a red you moved: fix it in this change, or escalate it. A site that cleared because its code moved rather than changed is the same thing. A site you skipped because it is held (conduct standard, "Before you change code to clear a red") is named here with its issue key.
 
@@ -48,8 +48,9 @@ A red can also be moved instead of fixed: the code goes to another layer, helper
 
 - Update the doc that is the ONE home for what you changed (a `--doc`/`--playbook`, the repo's own docs, the changelog if the repo keeps one). Point, don't restate.
 - **Search for advice your change made wrong, and delete it.** Stale instructions are how agents keep doing the old thing: grep the docs for the old command, flag, file or name.
+- **Current state only.** Reread every comment, docstring, test name and doc line the diff adds (`git diff <base> -U0 | grep '^+'`). Each states what the code does now and why. Rewrite any that tells history ("used to", "no longer", "instead of", "the old…", "was green", a version that introduced it, an incident, an issue key): that goes in the commit message, the LuxPM issue and the change log (`luxarch --doc FLEET-AGENT-CONDUCT-STANDARD`, first principles).
 
-**Evidence:** the doc lines changed, and the grep you ran for the old advice.
+**Evidence:** the doc lines changed, the grep you ran for the old advice, and the added lines you rewrote to current state (or "none tell history").
 
 ## 5. The gate, committed in the issue's worktree
 
@@ -61,25 +62,38 @@ A red can also be moved instead of fixed: the code goes to another layer, helper
 
 ## 6. LuxPM, closed out
 
-- Every issue this work touched: **closed** (`luxpm_update_issue` with a `close_summary` saying what shipped and anything deliberately not done), or left open on purpose with a comment saying what remains. A comment is not a close. **Close when the code is done** (committed, pushed, gate green), never later: not "after the deploy", not "once I've checked prod". Deploying is the owner's step; a check of the deployed stack is its own step or its own issue.
+- Every issue this work touched: **closed** (`luxpm_update_issue` with a `close_summary` saying what shipped), or left open on purpose with a comment saying what remains. A comment is not a close. **Close when the code is done** (committed, pushed, gate green), never later: not "after the deploy", not "once I've checked prod". Deploying is the owner's step; a check of the deployed stack is its own step or its own issue.
 - **Checklist items** done: one `luxpm_update_checklist(sequence_id, items=[{item: <number or title>, done: true}, …])` per issue, ticking every finished item. **Activities and todos** for this work completed (`luxpm_list_activities`).
 - **Work logged with its commits**, one call per issue: `luxpm_log_activity(sequence_id, kind="code_change", content=<the evidence>, commits=[{sha, committed_at}, …])` records the entry AND links the commits (use `luxpm_link_commits` only for commits that belong to no issue), every commit with its `committed_at` (`git log -1 --format=%cI <sha>`): without it LuxPM cannot know the commit's age, and an old sha linked as evidence becomes the sync receipt's anchor. Link this repo's commits to this repo's issues only.
-- New follow-up work: **search first** (`luxpm_semantic_search`, `luxpm_list_issues` with `search`), comment on an existing issue if found, create only if none.
+- **Every finding this session raised, filed or dropped.** Go back through the session, not just the diff: each bug, red, limit or follow-up you named in a reply ("not filed yet", "to file", "follow-up", "out of scope"), each `/adversarial` UNREPRODUCED or deferred item, each red you noticed in a file outside the change, and each owner aside. For each one: **search first** (`luxpm_semantic_search`, `luxpm_list_issues` with `search`), comment on the match, or create one; or name it dropped with the reason. One that lives only in the conversation is lost at the next compact.
+- **A close summary is not a tracker.** Work you did not do — not built, deferred, a follow-up, a stated limit with a fix, an UNREPRODUCED finding — is filed as its own open issue BEFORE the close, and the close summary names that key beside it ("Not built: X (<ticket>)"), or says `dropped: <why>`. Written into a closed issue's summary or comment, it is tracked by nothing and nobody picks it up. The emitted `luxpm-close-tracks-deferrals` hook denies a close whose summary defers work without naming another issue or `dropped`.
+- New follow-up work from the close-out itself: the same, search first, comment on an existing issue if found, create only if none.
 - **Close on the commit and the green gate**: step 7 lands and pushes it next. If landing then fails, set the issue back to `in_progress` with the reason.
 - Re-issue the **sync receipt** (`luxpm_issue_sync_receipt`), write it verbatim to `.luxpm-receipt` in the worktree, and commit it there: it lands with the work.
 - **Read the receipt you just issued.** If `open_untriaged` or `closed_without_summary` is above zero (`repo.luxpm_backlog_triaged` reds it), the backlog beyond this work needs triage: say so in your report with the counts and run `/luxpm-audit` (it works in batches; a large backlog is not a reason to skip it). This step covers only what THIS work touched.
 
-**Evidence:** each issue key with its new state, and the receipt's `issued_at`.
+**Evidence:** each issue key with its new state; each finding the session raised with its issue key, or "dropped: <why>"; and the receipt's `issued_at`.
 
 ## 7. Land, remove the worktree, push
 
-- In the worktree: `python3 .claude/hooks/worktree.py land`. If it rebased onto new commits, it stops: re-run the touched tests and `make check` on the rebased code, then `land` again. A conflict stops it with nothing changed: resolve it in the worktree, re-run the gate, land.
-- `ExitWorktree` with `action: "remove"`. The session is back in the main checkout and the worktree and its branch are gone.
-- Push as `.luxarch.toml` declares: `[agents] push = "agent"`: `git push` the base branch. `push = "owner"`: do not push; say the work is landed and ready. A repo with no declaration reds `repo.agent_push_declared`: ask the owner which it is, once, and write the answer there.
+- In the worktree: `python3 .claude/hooks/worktree.py land`. If it rebased onto new commits (this machine's, or under `"agent"` another machine's, fetched from origin), it stops: re-run the touched tests and `make check` on the rebased code, then `land` again. A conflict stops it with nothing changed: resolve it in the worktree, re-run the gate, land.
+- Pushing follows `.luxarch.toml`. `[agents] push = "agent"`: `land` pushes the tested HEAD to origin as it lands. If origin rejected it, origin moved: run `land` again, never `git pull --rebase` on the base. `push = "owner"`: `land` stays local; say the work is landed and ready. A repo with no declaration reds `repo.agent_push_declared`: ask the owner which it is, once, and write the answer there.
+- `ExitWorktree` with `action: "keep"`, then from the main checkout `python3 .claude/hooks/worktree.py list --prune`: it prunes the worktree and its branch now that they are landed, clean, and locked by no one else. Not `ExitWorktree` `remove`: it judges the branch against the commit the worktree was made from, so it refuses every landed branch as unmerged work, and `discard_changes: true` is never the answer to that refusal.
 - `python3 .claude/hooks/worktree.py list`: no worktree left for this issue.
 
-**Evidence:** `land`'s `Landed N commit(s) on <base> at <sha>` line, the `list` output, and `git status -sb` (nothing ahead under `"agent"`; the commits ahead named under `"owner"`).
+**Evidence:** `land`'s `Landed and pushed N commit(s) on <base> at <sha>` line (`Landed N commit(s)` under `"owner"`), the `list` output, and `git status -sb` (nothing ahead under `"agent"`; the commits ahead named under `"owner"`).
 
 ## 8. Report
 
-One short report: what shipped (with the evidence above), what is still open and why. No effort narration.
+Two parts, in this order:
+
+1. **What this session worked on**, in a short paragraph or a few bullets of plain sentences for someone who was not watching:
+
+   - what it set out to do, and why;
+   - what it did and found along the way, including the decisions and owner rulings, anything that changed the plan, and dead ends worth knowing;
+   - where things stand;
+   - what comes next.
+
+   Name issues by key. This is a summary of the work, not of the effort: no narrating how hard it was.
+
+1. **The evidence:** what shipped (with the evidence above), and what is still open and why.

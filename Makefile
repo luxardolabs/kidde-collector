@@ -60,13 +60,13 @@ RUFF_VERSION ?= 0.15.22
 
 # Architecture guard (luxarch) — pinned; registry host comes from Makefile.local (see above).
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.310.2
+LUXARCH_VERSION  := 0.331.0
 
 # Code-style + type standard (luxlint) — pinned; registry host comes from Makefile.local.
 # luxlint ships from the PRIVATE registry only (never GHCR), so the host stays out of this
 # public repo exactly like LUXARCH_REGISTRY. Without it, `make lint`/`make format` skip.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  := 0.68.0
+LUXLINT_VERSION  := 0.70.1
 LUXLINT_IMAGE    := $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 
 # Dependency-vulnerability guard (luxaudit) — pinned; registry host comes from Makefile.local.
@@ -75,7 +75,7 @@ LUXLINT_IMAGE    := $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 # it drops, no rebuild). Private registry only. Without the host, `make audit` skips. Same
 # out-of-tree pattern as LUXARCH_REGISTRY / LUXLINT_REGISTRY.
 LUXAUDIT_REGISTRY ?=
-LUXAUDIT_VERSION  := 0.14.0
+LUXAUDIT_VERSION  := 0.15.0
 # Empty without the registry, never a hostless `/luxardolabs/…` ref: the image block's
 # require_scanner then refuses before anything is built or pushed.
 LUXAUDIT_IMAGE    := $(if $(LUXAUDIT_REGISTRY),$(LUXAUDIT_REGISTRY)/luxardolabs/luxaudit:$(LUXAUDIT_VERSION))
@@ -316,7 +316,7 @@ override sq = $(if $(findstring $(IB_NL),$(1)),$(error REFUSING: a value a block
 override sqw = $(foreach w,$(1),$(call sq,$(w)))
 # luxarch:build-core end - DO NOT edit this marker line: the image block's runtime guard reads its range.
 
-# luxarch:image-block asset v19 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit image-block`.
+# luxarch:image-block asset v21 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit image-block`.
 # ── Images: ONE naming scheme, and the NAME declares what the image IS ──────────────────────────
 # Emitted by `luxarch --emit image-block`. Two axes, both readable from the name alone:
 #
@@ -357,7 +357,9 @@ REGISTRY      ?=
 # (`PRIVATE_REGISTRY := <host>:<port>`). Nothing in the block can tell a private host from a public
 # one, so the declaration is the fact: set, REGISTRY (every candidate before its scan, every sha-
 # build) must be it, compared by host as for PUBLIC_REGISTRY, and so must RELEASE_REGISTRY when it is
-# REGISTRY. Unset, nothing is checked against it.
+# REGISTRY. Unset, nothing is checked against it, except (v21) that REGISTRY is never a public
+# registry service (docker.io, ghcr.io, quay.io, public.ecr.aws, gcr.io, *.pkg.dev, …), and that a repo
+# whose RELEASE_REGISTRY is another host than REGISTRY must declare it.
 PRIVATE_REGISTRY ?=
 # v13: the registry the RELEASE goes to, the one prod pulls from. The fleet has more than one: dev
 # stacks pull from the local registry above, prod at a remote host pulls from a registry it can reach
@@ -477,7 +479,7 @@ override define require_registry
 $(require_make_inputs); $(if $(filter-out file override,$(origin REGISTRY)),echo "REFUSING: REGISTRY comes from the shell or the command line and not a makefile: set it above the image block with := (a public repo: in Makefile.local) and do not pass or export it. A registry taken from the shell is how an unscanned candidate reaches a public registry."; exit 1; )$(if $(filter-out file override,$(origin RELEASE_REGISTRY)),echo "REFUSING: RELEASE_REGISTRY comes from the shell or the command line and not a makefile: set it above the image block with := (a public repo: in Makefile.local) and do not pass or export it. A registry taken from the shell is how an unscanned candidate reaches a public registry."; exit 1; )$(if $(filter-out file override,$(origin PUBLIC_REGISTRY)),echo "REFUSING: PUBLIC_REGISTRY comes from the shell or the command line and not a makefile: set it above the image block with := (a public repo: in Makefile.local) and do not pass or export it. A registry taken from the shell is how an unscanned candidate reaches a public registry."; exit 1; )\
 [ -n $(call sq,$(strip $(REGISTRY))) ] && [ -n $(call sq,$(strip $(RELEASE_REGISTRY))) ] || { \
   echo "REFUSING: REGISTRY is empty. Set it above the image block (a public repo: in Makefile.local)"; exit 1; }; \
-ib_host() { printf '%s\n' "$$1" | sed -e 's|/.*||' | tr 'A-Z' 'a-z' | sed -e 's/:443$$//' -e 's/^127\.[0-9]*\.[0-9]*\.[0-9]*\(:\|$$\)/localhost\1/' -e 's/^0\.0\.0\.0\(:\|$$\)/localhost\1/' -e 's/^\[::1\]\(:\|$$\)/localhost\1/' -e 's/^\(index\|registry-1\)\.docker\.io$$/docker.io/'; }; \
+ib_host() { printf '%s\n' "$$1" | sed -e 's|/.*||' | tr 'A-Z' 'a-z' | sed -e 's/:443$$//' -e 's/^127\.[0-9]*\.[0-9]*\.[0-9]*\(:\|$$\)/localhost\1/' -e 's/^0\.0\.0\.0\(:\|$$\)/localhost\1/' -e 's/^\[::1\]\(:\|$$\)/localhost\1/' -e 's/^\(index\|registry-1\)\.docker\.io$$/docker.io/' -e 's/^registry\.hub\.docker\.com$$/docker.io/'; }; \
 rh=$$(ib_host $(call sq,$(strip $(REGISTRY)))); ph=$$(ib_host $(call sq,$(strip $(PUBLIC_REGISTRY)))); \
 [ -z "$$ph" ] || [ "$$rh" != "$$ph" ] || { \
   echo "REFUSING: REGISTRY is PUBLIC_REGISTRY (one host: compared lowercased, without the default port :443, localhost and 127.0.0.1 alike). REGISTRY holds every candidate before its scan and every sha- build; the public registry gets only a released, rescanned version (make release-public)"; exit 1; }; \
@@ -487,6 +489,12 @@ pv=$$(ib_host $(call sq,$(strip $(PRIVATE_REGISTRY)))); lh=$$(ib_host $(call sq,
   echo "REFUSING: REGISTRY is host $$rh, not PRIVATE_REGISTRY's $$pv, the registry this repo declares private: every candidate and every sha- build goes to REGISTRY"; exit 1; }; \
 [ -z "$$pv" ] || [ "$$lh" != "$$rh" ] || [ "$$lh" = "$$pv" ] || { \
   echo "REFUSING: RELEASE_REGISTRY is REGISTRY (host $$lh) but not PRIVATE_REGISTRY's $$pv"; exit 1; }; \
+case "$$rh" in localhost|localhost:*|*.*|*:*) ;; *) \
+  echo "REFUSING: REGISTRY's first part $$rh has no . or :, so docker reads it as a Docker Hub namespace (docker.io/$$rh/…), a public registry. Give the private registry's host (<host>:<port>)"; exit 1 ;; esac; \
+case "$$rh" in docker.io|ghcr.io|quay.io|public.ecr.aws|gcr.io|*.gcr.io|*.pkg.dev|registry.gitlab.com|mcr.microsoft.com) \
+  echo "REFUSING: REGISTRY is $$rh, a public registry service: REGISTRY holds every candidate before its scan and every sha- build, so it is the private registry. Prod pulling from $$rh is RELEASE_REGISTRY := $$rh; REGISTRY stays private"; exit 1 ;; esac; \
+[ "$$lh" = "$$rh" ] || [ -n "$$pv" ] || { \
+  echo "REFUSING: RELEASE_REGISTRY (host $$lh) is not REGISTRY (host $$rh), so this repo releases somewhere other than where its candidates are built: declare REGISTRY's host private above the block (PRIVATE_REGISTRY := <host>:<port>), which the block then holds REGISTRY to"; exit 1; }; \
 $(require_derived_refs)
 endef
 
@@ -505,8 +513,22 @@ endef
 # would run that line under `make -n`, and the line is the whole publish
 override IB_MAKE := $(MAKE_COMMAND)
 override IB_NAME = $(if $(IMAGE_PRIMARY),$($(IMAGE_PRIMARY)_IMAGE_NAME),$(IMAGE_NAME))
+# v21: the scanner that decides whether a candidate is pushed (LUXAUDIT_IMAGE or LUXAUDIT) is the
+# makefile's too. Set on the command line or composed from a command-line registry, it differed from the
+# clean evaluation and chose the scan's verdict.
 override IB_EVAL_VARS = REGISTRY RELEASE_REGISTRY PUBLIC_REGISTRY PRIVATE_REGISTRY IMAGE_NAME IMAGES PLATFORMS COMMIT VERSION \
-  MIRROR_VERSION MIRROR_IMAGE_NAME $(foreach i,$(IMAGE_LIST),$(i)_IMAGE_NAME) $(IB_DERIVED_REFS)
+  MIRROR_VERSION MIRROR_IMAGE_NAME LUXAUDIT_IMAGE LUXAUDIT $(foreach i,$(IMAGE_LIST),$(i)_IMAGE_NAME) $(IB_DERIVED_REFS)
+# v21: a recipe line is expanded whole before it runs, so a `$(eval)` inside a variable the block
+# expands late in it (BUILD_ARGS = $(eval REGISTRY := $(X))) re-set a value every check above had
+# approved. Each guarded recipe starts with ib_run_snap (the values as its expansion begins) and ends
+# with ib_unchanged, expanded last, which refuses before the line runs if any of them moved.
+override ib_now_vars = $(foreach v,$(IB_EVAL_VARS),$(v)=$(strip $($(v)))|)
+override define ib_run_snap
+$(eval override IB_RUN_SNAP := $(subst $$,$$$$,$(ib_now_vars)))
+endef
+override define ib_unchanged
+$(if $(and $(findstring |$(IB_RUN_SNAP)|,|$(ib_now_vars)|),$(findstring |$(ib_now_vars)|,|$(IB_RUN_SNAP)|)),,$(error REFUSING: a value the image block checked (a registry, an image name, the scanner) changed while make expanded the recipe, through a $$(eval) in a variable the block expands: nothing was built or pushed))
+endef
 override define require_derived_refs
 ib_bad=; \
 [ $(call sq,$(IMAGE)) = $(call sq,$(REGISTRY)/$(IB_NAME)) ] || ib_bad="$$ib_bad IMAGE"; \
@@ -663,7 +685,7 @@ endef
 # Build caching is unchanged: BuildKit and the classic builder key a COPY on file content, not on the
 # path or mtime of the context, so an unchanged layer still hits the cache. The cost is one checkout
 # of the tree per publish, in TMPDIR.
-override define export_head
+override define export_tree
 for v in $$(env | sed -n -e 's/^\(GIT_CONFIG_KEY_[0-9][0-9]*\)=.*/\1/p' -e 's/^\(GIT_CONFIG_VALUE_[0-9][0-9]*\)=.*/\1/p'); do unset "$$v"; done; \
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR GIT_NAMESPACE \
   GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_TEMPLATE_DIR GIT_ATTR_SOURCE; \
@@ -697,7 +719,14 @@ if [ -n "$$nlp" ]; then echo "REFUSING: $$nlp: the image block reads git's path 
 [ -z "$$flt" ] || { echo "REFUSING: the commit assigns a filter driver: $$(printf '%s' "$$flt" | tr '\n' ' '). The image is built from the commit's stored bytes with no filter run, so a filtered file (git-crypt or transcrypt ciphertext, a git-lfs pointer) would ship as stored."; exit 1; }; \
 lfs=$$(find "$$ctxdir/src" -name .git -prune -o -type f -size -2k -print 2>/dev/null | while IFS= read -r x; do if [ "$$(head -n 1 "$$x" 2>/dev/null)" = 'version https://git-lfs.github.com/spec/v1' ]; then printf '%s ' "$${x#$$ctxdir/src/}"; fi; done); \
 [ -z "$$lfs" ] || { echo "REFUSING: the commit stores git-lfs pointers ($$lfs): the image is built from the commit's own bytes with no filter run, so the pointer would ship in place of the file. git-lfs is not supported by the image block."; exit 1; }; \
-root=$$(cd "$$ctxdir/src" && pwd -P); cd "$$ctxdir/src/$$pre"; \
+root=$$(cd "$$ctxdir/src" && pwd -P); cd "$$ctxdir/src/$$pre"
+endef
+
+# v21: the clean copy, then what the app images build from. `publish-mirror` takes the copy and checks
+# only the mirror's own context and Dockerfile, so a makefile that publishes nothing but a tool mirror
+# (no app `./Dockerfile`) can publish it.
+override define export_head
+$(export_tree); \
 $(call image_block_each,export_contained,;); \
 $(export_build_args)
 endef
@@ -917,7 +946,7 @@ endef
 # does not. SHELL / .SHELLFLAGS from outside and a tracing `-x` refuse, and BASH_ENV, ENV, SHELLOPTS and BASHOPTS never
 # reach a recipe shell (`unexport`).
 publish-sha: $(if $(PLATFORM_LIST),buildx-setup) ## Build + scan + PUSH this commit as :sha-<commit> (and move the :dev alias) — never the version
-	@$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))set -e; set -f; $(if $(filter-out default,$(origin MAKE_COMMAND)),echo "REFUSING: MAKE_COMMAND is set from outside the makefile"; exit 1; )$(if $(strip $(MAKEFILES)),echo "REFUSING: MAKEFILES is set so make read makefiles before this one that nobody committed or named: unset it"; exit 1; )$(if $(filter-out file,$(origin MAKEFILE_LIST)),echo "REFUSING: MAKEFILE_LIST is set from outside the makefile"; exit 1; )$(if $(filter-out default undefined,$(origin MAKECMDGOALS)),echo "REFUSING: MAKECMDGOALS is set from outside the makefile"; exit 1; )$(if $(filter command% environment%,$(origin SHELL) $(origin .SHELLFLAGS)),echo "REFUSING: SHELL or .SHELLFLAGS comes from the command line or the environment: the recipe would run in another shell"; exit 1; )$(if $(findstring x,$(filter-out --%,$(filter -%,$(.SHELLFLAGS)))),echo "REFUSING: .SHELLFLAGS traces the recipe (-x) and would print every value spliced into it"; exit 1; )\
+	@$(ib_run_snap)$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))set -e; set -f; $(if $(filter-out default,$(origin MAKE_COMMAND)),echo "REFUSING: MAKE_COMMAND is set from outside the makefile"; exit 1; )$(if $(strip $(MAKEFILES)),echo "REFUSING: MAKEFILES is set so make read makefiles before this one that nobody committed or named: unset it"; exit 1; )$(if $(filter-out file,$(origin MAKEFILE_LIST)),echo "REFUSING: MAKEFILE_LIST is set from outside the makefile"; exit 1; )$(if $(filter-out default undefined,$(origin MAKECMDGOALS)),echo "REFUSING: MAKECMDGOALS is set from outside the makefile"; exit 1; )$(if $(filter command% environment%,$(origin SHELL) $(origin .SHELLFLAGS)),echo "REFUSING: SHELL or .SHELLFLAGS comes from the command line or the environment: the recipe would run in another shell"; exit 1; )$(if $(findstring x,$(filter-out --%,$(filter -%,$(.SHELLFLAGS)))),echo "REFUSING: .SHELLFLAGS traces the recipe (-x) and would print every value spliced into it"; exit 1; )\
 	[ -z "$${BASH_ENV:-}$${ENV:-}" ] || { echo "REFUSING: BASH_ENV or ENV is set: a shell startup file ran before this recipe"; exit 1; }; case $$- in *x*) echo "REFUSING: the recipe shell traces its commands (-x) and would print every value spliced into it"; exit 1 ;; esac; \
 	ib_dm=; for m in GNUmakefile makefile Makefile; do if [ -f "$$m" ]; then ib_dm=$$m; break; fi; done; \
 	[ -n "$$ib_dm" ] && git ls-files --error-unmatch -- "$$ib_dm" >/dev/null 2>&1 || { \
@@ -940,11 +969,11 @@ publish-sha: $(if $(PLATFORM_LIST),buildx-setup) ## Build + scan + PUSH this com
 	[ "$$ib_cm" -gt 0 ] && [ "$$ib_ce" -gt "$$ib_cm" ] && [ "$$ib_ce" -lt "$$ib_m" ] || { \
 	  echo "REFUSING: $$ib_bf has no build core directly above the image block (exactly one core marker and one core end marker in the file, both before the block's): the block's quoting and image names are the core's, and its guard checks them there. Paste luxarch --emit build-core above the block"; exit 1; }; \
 	ib_nm=$$(awk -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" '(NR >= m && NR <= e || NR >= cm && NR <= ce) && /^override / { s = $$0; sub(/^override +(define +)?/, "", s); sub(/[ \t:=+!?].*/, "", s); printf " %s", s } END { print " " }' "$$ib_bf"); \
-	ib_bad=$$(printf '%s\n' "$$ib_db" | awk -v F="$$ib_bf" -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" -v names="$$ib_nm" -v tg='$(subst ','\'',release publish-sha release-public publish-mirror dev-deploy dev-pin gh-release $@ $(MAKECMDGOALS))' 'function bad(n, w, f, l) { if (index(names, " " n " ") && (w != "" || f != F || (l + 0 < m || l + 0 > e) && (l + 0 < cm || l + 0 > ce))) printf "%s%s at %s:%s; ", n, (w != "" ? " (" w "-specific)" : ""), f, l; else if (w != "" && index(" REGISTRY RELEASE_REGISTRY PUBLIC_REGISTRY PRIVATE_REGISTRY ", " " n " ") && reaches(sc)) printf "%s (%s-specific, %s) at %s:%s; ", n, w, sc, f, l } function reaches(p,   i, k, T, a, b) { k = split(tg, T, " "); i = index(p, "%"); for (a = 1; a <= k; a++) { if (i == 0 && T[a] == p) return 1; if (i > 0 && index(T[a], substr(p, 1, i - 1)) == 1 && length(T[a]) >= length(p) - 1 && substr(T[a], length(T[a]) - (length(p) - i) + 1) == substr(p, i + 1)) return 1 } return 0 } /^# Pattern-specific Variable Values/ { pat = 1 } /^# (Directories|Implicit Rules|Files)/ { pat = 0 } pat && /^[^#].* :$$/ { ph = $$0; sub(/ :$$/, "", ph) } /^# (makefile|\047override\047 directive|environment|environment under -e|command line|default|automatic)( \(from \047.*\047, line [0-9]+\))?$$/ { o = 1; f = ""; l = 0; if (match($$0, /\(from \047.*\047, line [0-9]+\)$$/)) { s = substr($$0, RSTART + 7, RLENGTH - 8); f = s; sub(/\047, line [0-9]+$$/, "", f); l = s; sub(/^.*\047, line /, "", l) } next } o && pat && /^# [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { sc = ph; bad($$2, "pattern", f, l); o = 0; next } o && /^[^#\t ][^:]*: [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { x = $$0; sc = x; sub(/:.*/, "", sc); sub(/^[^:]*: /, "", x); split(x, X, " "); bad(X[1], "target", f, l); o = 0; next } o && /^define [A-Za-z_]/ { bad($$2, "", f, l); o = 0; next } o && /^[A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { bad($$1, "", f, l); o = 0; next } { o = 0 }'); \
+	ib_bad=$$(printf '%s\n' "$$ib_db" | awk -v F="$$ib_bf" -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" -v names="$$ib_nm" -v tg='$(subst ','\'',release publish-sha release-public publish-mirror dev-deploy dev-pin gh-release $@ $(MAKECMDGOALS))' 'function bad(n, w, f, l) { if (index(names, " " n " ") && (w != "" || f != F || (l + 0 < m || l + 0 > e) && (l + 0 < cm || l + 0 > ce))) printf "%s%s at %s:%s; ", n, (w != "" ? " (" w "-specific)" : ""), f, l; else if (w != "" && index(" REGISTRY RELEASE_REGISTRY PUBLIC_REGISTRY PRIVATE_REGISTRY LUXAUDIT_IMAGE LUXAUDIT IMAGE_NAME PLATFORMS ", " " n " ") && reaches(sc)) printf "%s (%s-specific, %s) at %s:%s; ", n, w, sc, f, l } function reaches(p,   i, k, T, a, b) { k = split(tg, T, " "); i = index(p, "%"); for (a = 1; a <= k; a++) { if (i == 0 && T[a] == p) return 1; if (i > 0 && index(T[a], substr(p, 1, i - 1)) == 1 && length(T[a]) >= length(p) - 1 && substr(T[a], length(T[a]) - (length(p) - i) + 1) == substr(p, i + 1)) return 1 } return 0 } /^# Pattern-specific Variable Values/ { pat = 1 } /^# (Directories|Implicit Rules|Files)/ { pat = 0 } pat && /^[^#].* :$$/ { ph = $$0; sub(/ :$$/, "", ph) } /^# (makefile|\047override\047 directive|environment|environment under -e|command line|default|automatic)( \(from \047.*\047, line [0-9]+\))?$$/ { o = 1; f = ""; l = 0; if (match($$0, /\(from \047.*\047, line [0-9]+\)$$/)) { s = substr($$0, RSTART + 7, RLENGTH - 8); f = s; sub(/\047, line [0-9]+$$/, "", f); l = s; sub(/^.*\047, line /, "", l) } next } o && pat && /^# [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { sc = ph; bad($$2, "pattern", f, l); o = 0; next } o && /^[^#\t ][^:]*: [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { x = $$0; sc = x; sub(/:.*/, "", sc); sub(/^[^:]*: /, "", x); split(x, X, " "); bad(X[1], "target", f, l); o = 0; next } o && /^define [A-Za-z_]/ { bad($$2, "", f, l); o = 0; next } o && /^[A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { bad($$1, "", f, l); o = 0; next } { o = 0 }'); \
 	[ -z "$$ib_bad" ] || { echo "REFUSING: make's own database (a clean evaluation with these goals) defines what the image block defines from outside the block: $${ib_bad%; }. The block's names are set inside it only."; exit 1; }; \
 	$(require_registry); $(require_images)$(require_build_inputs)$(refuse_dirty_tree); $(require_scanner); \
 	$(if $(IMAGE_LIST),$(publish_sha_images),$(publish_sha_one)); \
-	echo "deploy it with:  make dev-deploy   (or: make dev-pin TAG=sha-"$(call sq,$(COMMIT))")"
+	echo "deploy it with:  make dev-deploy   (or: make dev-pin TAG=sha-"$(call sq,$(COMMIT))")"$(ib_unchanged)
 
 # The GitHub Release: this version's user-facing notes on the repo's /releases page (--doc
 # FLEET-RELEASE-PROCESS §9, `repo.github_release_wired`). v8: v1-v7 had no step for it, so an exact copy
@@ -1001,7 +1030,7 @@ fi
 endef
 
 gh-release: ## Publish the GitHub Release for v$(VERSION) from its release notes (idempotent; `release` runs it)
-	@$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))set -e; set -f; $(if $(filter-out default,$(origin MAKE_COMMAND)),echo "REFUSING: MAKE_COMMAND is set from outside the makefile"; exit 1; )$(if $(strip $(MAKEFILES)),echo "REFUSING: MAKEFILES is set so make read makefiles before this one that nobody committed or named: unset it"; exit 1; )$(if $(filter-out file,$(origin MAKEFILE_LIST)),echo "REFUSING: MAKEFILE_LIST is set from outside the makefile"; exit 1; )$(if $(filter-out default undefined,$(origin MAKECMDGOALS)),echo "REFUSING: MAKECMDGOALS is set from outside the makefile"; exit 1; )$(if $(filter command% environment%,$(origin SHELL) $(origin .SHELLFLAGS)),echo "REFUSING: SHELL or .SHELLFLAGS comes from the command line or the environment: the recipe would run in another shell"; exit 1; )$(if $(findstring x,$(filter-out --%,$(filter -%,$(.SHELLFLAGS)))),echo "REFUSING: .SHELLFLAGS traces the recipe (-x) and would print every value spliced into it"; exit 1; )\
+	@$(ib_run_snap)$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))set -e; set -f; $(if $(filter-out default,$(origin MAKE_COMMAND)),echo "REFUSING: MAKE_COMMAND is set from outside the makefile"; exit 1; )$(if $(strip $(MAKEFILES)),echo "REFUSING: MAKEFILES is set so make read makefiles before this one that nobody committed or named: unset it"; exit 1; )$(if $(filter-out file,$(origin MAKEFILE_LIST)),echo "REFUSING: MAKEFILE_LIST is set from outside the makefile"; exit 1; )$(if $(filter-out default undefined,$(origin MAKECMDGOALS)),echo "REFUSING: MAKECMDGOALS is set from outside the makefile"; exit 1; )$(if $(filter command% environment%,$(origin SHELL) $(origin .SHELLFLAGS)),echo "REFUSING: SHELL or .SHELLFLAGS comes from the command line or the environment: the recipe would run in another shell"; exit 1; )$(if $(findstring x,$(filter-out --%,$(filter -%,$(.SHELLFLAGS)))),echo "REFUSING: .SHELLFLAGS traces the recipe (-x) and would print every value spliced into it"; exit 1; )\
 	[ -z "$${BASH_ENV:-}$${ENV:-}" ] || { echo "REFUSING: BASH_ENV or ENV is set: a shell startup file ran before this recipe"; exit 1; }; case $$- in *x*) echo "REFUSING: the recipe shell traces its commands (-x) and would print every value spliced into it"; exit 1 ;; esac; \
 	ib_dm=; for m in GNUmakefile makefile Makefile; do if [ -f "$$m" ]; then ib_dm=$$m; break; fi; done; \
 	[ -n "$$ib_dm" ] && git ls-files --error-unmatch -- "$$ib_dm" >/dev/null 2>&1 || { \
@@ -1024,10 +1053,10 @@ gh-release: ## Publish the GitHub Release for v$(VERSION) from its release notes
 	[ "$$ib_cm" -gt 0 ] && [ "$$ib_ce" -gt "$$ib_cm" ] && [ "$$ib_ce" -lt "$$ib_m" ] || { \
 	  echo "REFUSING: $$ib_bf has no build core directly above the image block (exactly one core marker and one core end marker in the file, both before the block's): the block's quoting and image names are the core's, and its guard checks them there. Paste luxarch --emit build-core above the block"; exit 1; }; \
 	ib_nm=$$(awk -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" '(NR >= m && NR <= e || NR >= cm && NR <= ce) && /^override / { s = $$0; sub(/^override +(define +)?/, "", s); sub(/[ \t:=+!?].*/, "", s); printf " %s", s } END { print " " }' "$$ib_bf"); \
-	ib_bad=$$(printf '%s\n' "$$ib_db" | awk -v F="$$ib_bf" -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" -v names="$$ib_nm" -v tg='$(subst ','\'',release publish-sha release-public publish-mirror dev-deploy dev-pin gh-release $@ $(MAKECMDGOALS))' 'function bad(n, w, f, l) { if (index(names, " " n " ") && (w != "" || f != F || (l + 0 < m || l + 0 > e) && (l + 0 < cm || l + 0 > ce))) printf "%s%s at %s:%s; ", n, (w != "" ? " (" w "-specific)" : ""), f, l; else if (w != "" && index(" REGISTRY RELEASE_REGISTRY PUBLIC_REGISTRY PRIVATE_REGISTRY ", " " n " ") && reaches(sc)) printf "%s (%s-specific, %s) at %s:%s; ", n, w, sc, f, l } function reaches(p,   i, k, T, a, b) { k = split(tg, T, " "); i = index(p, "%"); for (a = 1; a <= k; a++) { if (i == 0 && T[a] == p) return 1; if (i > 0 && index(T[a], substr(p, 1, i - 1)) == 1 && length(T[a]) >= length(p) - 1 && substr(T[a], length(T[a]) - (length(p) - i) + 1) == substr(p, i + 1)) return 1 } return 0 } /^# Pattern-specific Variable Values/ { pat = 1 } /^# (Directories|Implicit Rules|Files)/ { pat = 0 } pat && /^[^#].* :$$/ { ph = $$0; sub(/ :$$/, "", ph) } /^# (makefile|\047override\047 directive|environment|environment under -e|command line|default|automatic)( \(from \047.*\047, line [0-9]+\))?$$/ { o = 1; f = ""; l = 0; if (match($$0, /\(from \047.*\047, line [0-9]+\)$$/)) { s = substr($$0, RSTART + 7, RLENGTH - 8); f = s; sub(/\047, line [0-9]+$$/, "", f); l = s; sub(/^.*\047, line /, "", l) } next } o && pat && /^# [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { sc = ph; bad($$2, "pattern", f, l); o = 0; next } o && /^[^#\t ][^:]*: [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { x = $$0; sc = x; sub(/:.*/, "", sc); sub(/^[^:]*: /, "", x); split(x, X, " "); bad(X[1], "target", f, l); o = 0; next } o && /^define [A-Za-z_]/ { bad($$2, "", f, l); o = 0; next } o && /^[A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { bad($$1, "", f, l); o = 0; next } { o = 0 }'); \
+	ib_bad=$$(printf '%s\n' "$$ib_db" | awk -v F="$$ib_bf" -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" -v names="$$ib_nm" -v tg='$(subst ','\'',release publish-sha release-public publish-mirror dev-deploy dev-pin gh-release $@ $(MAKECMDGOALS))' 'function bad(n, w, f, l) { if (index(names, " " n " ") && (w != "" || f != F || (l + 0 < m || l + 0 > e) && (l + 0 < cm || l + 0 > ce))) printf "%s%s at %s:%s; ", n, (w != "" ? " (" w "-specific)" : ""), f, l; else if (w != "" && index(" REGISTRY RELEASE_REGISTRY PUBLIC_REGISTRY PRIVATE_REGISTRY LUXAUDIT_IMAGE LUXAUDIT IMAGE_NAME PLATFORMS ", " " n " ") && reaches(sc)) printf "%s (%s-specific, %s) at %s:%s; ", n, w, sc, f, l } function reaches(p,   i, k, T, a, b) { k = split(tg, T, " "); i = index(p, "%"); for (a = 1; a <= k; a++) { if (i == 0 && T[a] == p) return 1; if (i > 0 && index(T[a], substr(p, 1, i - 1)) == 1 && length(T[a]) >= length(p) - 1 && substr(T[a], length(T[a]) - (length(p) - i) + 1) == substr(p, i + 1)) return 1 } return 0 } /^# Pattern-specific Variable Values/ { pat = 1 } /^# (Directories|Implicit Rules|Files)/ { pat = 0 } pat && /^[^#].* :$$/ { ph = $$0; sub(/ :$$/, "", ph) } /^# (makefile|\047override\047 directive|environment|environment under -e|command line|default|automatic)( \(from \047.*\047, line [0-9]+\))?$$/ { o = 1; f = ""; l = 0; if (match($$0, /\(from \047.*\047, line [0-9]+\)$$/)) { s = substr($$0, RSTART + 7, RLENGTH - 8); f = s; sub(/\047, line [0-9]+$$/, "", f); l = s; sub(/^.*\047, line /, "", l) } next } o && pat && /^# [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { sc = ph; bad($$2, "pattern", f, l); o = 0; next } o && /^[^#\t ][^:]*: [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { x = $$0; sc = x; sub(/:.*/, "", sc); sub(/^[^:]*: /, "", x); split(x, X, " "); bad(X[1], "target", f, l); o = 0; next } o && /^define [A-Za-z_]/ { bad($$2, "", f, l); o = 0; next } o && /^[A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { bad($$1, "", f, l); o = 0; next } { o = 0 }'); \
 	[ -z "$$ib_bad" ] || { echo "REFUSING: make's own database (a clean evaluation with these goals) defines what the image block defines from outside the block: $${ib_bad%; }. The block's names are set inside it only."; exit 1; }; \
 	$(gh_release_preflight); \
-	$(gh_release_publish)
+	$(gh_release_publish)$(ib_unchanged)
 
 # Cut VERSION: the immutable release tag prod pins. Refuses when that version is ALREADY released, in
 # the registry or as a git tag at another commit: a released version is never re-pushed, not even from
@@ -1072,7 +1101,7 @@ $(call refuse_published,$(call img_version,$(1)),Bump VERSION for a new release;
 endef
 
 release: $(if $(PLATFORM_LIST),buildx-setup) ## Cut VERSION: build + scan + PUSH :$(VERSION), then the GitHub Release (refuses an already-released VERSION)
-	@$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))set -e; set -f; $(if $(filter-out default,$(origin MAKE_COMMAND)),echo "REFUSING: MAKE_COMMAND is set from outside the makefile"; exit 1; )$(if $(strip $(MAKEFILES)),echo "REFUSING: MAKEFILES is set so make read makefiles before this one that nobody committed or named: unset it"; exit 1; )$(if $(filter-out file,$(origin MAKEFILE_LIST)),echo "REFUSING: MAKEFILE_LIST is set from outside the makefile"; exit 1; )$(if $(filter-out default undefined,$(origin MAKECMDGOALS)),echo "REFUSING: MAKECMDGOALS is set from outside the makefile"; exit 1; )$(if $(filter command% environment%,$(origin SHELL) $(origin .SHELLFLAGS)),echo "REFUSING: SHELL or .SHELLFLAGS comes from the command line or the environment: the recipe would run in another shell"; exit 1; )$(if $(findstring x,$(filter-out --%,$(filter -%,$(.SHELLFLAGS)))),echo "REFUSING: .SHELLFLAGS traces the recipe (-x) and would print every value spliced into it"; exit 1; )\
+	@$(ib_run_snap)$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))set -e; set -f; $(if $(filter-out default,$(origin MAKE_COMMAND)),echo "REFUSING: MAKE_COMMAND is set from outside the makefile"; exit 1; )$(if $(strip $(MAKEFILES)),echo "REFUSING: MAKEFILES is set so make read makefiles before this one that nobody committed or named: unset it"; exit 1; )$(if $(filter-out file,$(origin MAKEFILE_LIST)),echo "REFUSING: MAKEFILE_LIST is set from outside the makefile"; exit 1; )$(if $(filter-out default undefined,$(origin MAKECMDGOALS)),echo "REFUSING: MAKECMDGOALS is set from outside the makefile"; exit 1; )$(if $(filter command% environment%,$(origin SHELL) $(origin .SHELLFLAGS)),echo "REFUSING: SHELL or .SHELLFLAGS comes from the command line or the environment: the recipe would run in another shell"; exit 1; )$(if $(findstring x,$(filter-out --%,$(filter -%,$(.SHELLFLAGS)))),echo "REFUSING: .SHELLFLAGS traces the recipe (-x) and would print every value spliced into it"; exit 1; )\
 	[ -z "$${BASH_ENV:-}$${ENV:-}" ] || { echo "REFUSING: BASH_ENV or ENV is set: a shell startup file ran before this recipe"; exit 1; }; case $$- in *x*) echo "REFUSING: the recipe shell traces its commands (-x) and would print every value spliced into it"; exit 1 ;; esac; \
 	ib_dm=; for m in GNUmakefile makefile Makefile; do if [ -f "$$m" ]; then ib_dm=$$m; break; fi; done; \
 	[ -n "$$ib_dm" ] && git ls-files --error-unmatch -- "$$ib_dm" >/dev/null 2>&1 || { \
@@ -1095,7 +1124,7 @@ release: $(if $(PLATFORM_LIST),buildx-setup) ## Cut VERSION: build + scan + PUSH
 	[ "$$ib_cm" -gt 0 ] && [ "$$ib_ce" -gt "$$ib_cm" ] && [ "$$ib_ce" -lt "$$ib_m" ] || { \
 	  echo "REFUSING: $$ib_bf has no build core directly above the image block (exactly one core marker and one core end marker in the file, both before the block's): the block's quoting and image names are the core's, and its guard checks them there. Paste luxarch --emit build-core above the block"; exit 1; }; \
 	ib_nm=$$(awk -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" '(NR >= m && NR <= e || NR >= cm && NR <= ce) && /^override / { s = $$0; sub(/^override +(define +)?/, "", s); sub(/[ \t:=+!?].*/, "", s); printf " %s", s } END { print " " }' "$$ib_bf"); \
-	ib_bad=$$(printf '%s\n' "$$ib_db" | awk -v F="$$ib_bf" -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" -v names="$$ib_nm" -v tg='$(subst ','\'',release publish-sha release-public publish-mirror dev-deploy dev-pin gh-release $@ $(MAKECMDGOALS))' 'function bad(n, w, f, l) { if (index(names, " " n " ") && (w != "" || f != F || (l + 0 < m || l + 0 > e) && (l + 0 < cm || l + 0 > ce))) printf "%s%s at %s:%s; ", n, (w != "" ? " (" w "-specific)" : ""), f, l; else if (w != "" && index(" REGISTRY RELEASE_REGISTRY PUBLIC_REGISTRY PRIVATE_REGISTRY ", " " n " ") && reaches(sc)) printf "%s (%s-specific, %s) at %s:%s; ", n, w, sc, f, l } function reaches(p,   i, k, T, a, b) { k = split(tg, T, " "); i = index(p, "%"); for (a = 1; a <= k; a++) { if (i == 0 && T[a] == p) return 1; if (i > 0 && index(T[a], substr(p, 1, i - 1)) == 1 && length(T[a]) >= length(p) - 1 && substr(T[a], length(T[a]) - (length(p) - i) + 1) == substr(p, i + 1)) return 1 } return 0 } /^# Pattern-specific Variable Values/ { pat = 1 } /^# (Directories|Implicit Rules|Files)/ { pat = 0 } pat && /^[^#].* :$$/ { ph = $$0; sub(/ :$$/, "", ph) } /^# (makefile|\047override\047 directive|environment|environment under -e|command line|default|automatic)( \(from \047.*\047, line [0-9]+\))?$$/ { o = 1; f = ""; l = 0; if (match($$0, /\(from \047.*\047, line [0-9]+\)$$/)) { s = substr($$0, RSTART + 7, RLENGTH - 8); f = s; sub(/\047, line [0-9]+$$/, "", f); l = s; sub(/^.*\047, line /, "", l) } next } o && pat && /^# [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { sc = ph; bad($$2, "pattern", f, l); o = 0; next } o && /^[^#\t ][^:]*: [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { x = $$0; sc = x; sub(/:.*/, "", sc); sub(/^[^:]*: /, "", x); split(x, X, " "); bad(X[1], "target", f, l); o = 0; next } o && /^define [A-Za-z_]/ { bad($$2, "", f, l); o = 0; next } o && /^[A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { bad($$1, "", f, l); o = 0; next } { o = 0 }'); \
+	ib_bad=$$(printf '%s\n' "$$ib_db" | awk -v F="$$ib_bf" -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" -v names="$$ib_nm" -v tg='$(subst ','\'',release publish-sha release-public publish-mirror dev-deploy dev-pin gh-release $@ $(MAKECMDGOALS))' 'function bad(n, w, f, l) { if (index(names, " " n " ") && (w != "" || f != F || (l + 0 < m || l + 0 > e) && (l + 0 < cm || l + 0 > ce))) printf "%s%s at %s:%s; ", n, (w != "" ? " (" w "-specific)" : ""), f, l; else if (w != "" && index(" REGISTRY RELEASE_REGISTRY PUBLIC_REGISTRY PRIVATE_REGISTRY LUXAUDIT_IMAGE LUXAUDIT IMAGE_NAME PLATFORMS ", " " n " ") && reaches(sc)) printf "%s (%s-specific, %s) at %s:%s; ", n, w, sc, f, l } function reaches(p,   i, k, T, a, b) { k = split(tg, T, " "); i = index(p, "%"); for (a = 1; a <= k; a++) { if (i == 0 && T[a] == p) return 1; if (i > 0 && index(T[a], substr(p, 1, i - 1)) == 1 && length(T[a]) >= length(p) - 1 && substr(T[a], length(T[a]) - (length(p) - i) + 1) == substr(p, i + 1)) return 1 } return 0 } /^# Pattern-specific Variable Values/ { pat = 1 } /^# (Directories|Implicit Rules|Files)/ { pat = 0 } pat && /^[^#].* :$$/ { ph = $$0; sub(/ :$$/, "", ph) } /^# (makefile|\047override\047 directive|environment|environment under -e|command line|default|automatic)( \(from \047.*\047, line [0-9]+\))?$$/ { o = 1; f = ""; l = 0; if (match($$0, /\(from \047.*\047, line [0-9]+\)$$/)) { s = substr($$0, RSTART + 7, RLENGTH - 8); f = s; sub(/\047, line [0-9]+$$/, "", f); l = s; sub(/^.*\047, line /, "", l) } next } o && pat && /^# [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { sc = ph; bad($$2, "pattern", f, l); o = 0; next } o && /^[^#\t ][^:]*: [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { x = $$0; sc = x; sub(/:.*/, "", sc); sub(/^[^:]*: /, "", x); split(x, X, " "); bad(X[1], "target", f, l); o = 0; next } o && /^define [A-Za-z_]/ { bad($$2, "", f, l); o = 0; next } o && /^[A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { bad($$1, "", f, l); o = 0; next } { o = 0 }'); \
 	[ -z "$$ib_bad" ] || { echo "REFUSING: make's own database (a clean evaluation with these goals) defines what the image block defines from outside the block: $${ib_bad%; }. The block's names are set inside it only."; exit 1; }; \
 	$(require_registry); $(require_images)$(require_build_inputs)$(refuse_dirty_tree); $(require_scanner); \
 	$(call image_block_each,release_refuse,;); \
@@ -1112,7 +1141,7 @@ release: $(if $(PLATFORM_LIST),buildx-setup) ## Cut VERSION: build + scan + PUSH
 	$(if $(PLATFORM_LIST),$(release_multi),$(release_single)); \
 	$(export_leave); \
 	$(gh_release_publish); \
-	echo "released "$(call sq,$(call image_block_each,img_version))"; pin prod to TAG="$(call sq,$(VERSION))
+	echo "released "$(call sq,$(call image_block_each,img_version))"; pin prod to TAG="$(call sq,$(VERSION))$(ib_unchanged)
 
 # v14: a PUBLIC copy of the release, for an image other people pull (a public collector on GHCR). Set
 # `PUBLIC_REGISTRY := ghcr.io` above this block and the target exists; unset, there is none. It never
@@ -1210,7 +1239,7 @@ override public_said = $(call img_version,$(1)) as $(call img_public,$(1))
 
 ifneq ($(strip $(PUBLIC_REGISTRY)),)
 release-public: ## Copy the RELEASED :$(VERSION) to $(PUBLIC_REGISTRY) by digest after rescanning it (run `make release` first)
-	@$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))set -e; set -f; $(if $(filter-out default,$(origin MAKE_COMMAND)),echo "REFUSING: MAKE_COMMAND is set from outside the makefile"; exit 1; )$(if $(strip $(MAKEFILES)),echo "REFUSING: MAKEFILES is set so make read makefiles before this one that nobody committed or named: unset it"; exit 1; )$(if $(filter-out file,$(origin MAKEFILE_LIST)),echo "REFUSING: MAKEFILE_LIST is set from outside the makefile"; exit 1; )$(if $(filter-out default undefined,$(origin MAKECMDGOALS)),echo "REFUSING: MAKECMDGOALS is set from outside the makefile"; exit 1; )$(if $(filter command% environment%,$(origin SHELL) $(origin .SHELLFLAGS)),echo "REFUSING: SHELL or .SHELLFLAGS comes from the command line or the environment: the recipe would run in another shell"; exit 1; )$(if $(findstring x,$(filter-out --%,$(filter -%,$(.SHELLFLAGS)))),echo "REFUSING: .SHELLFLAGS traces the recipe (-x) and would print every value spliced into it"; exit 1; )\
+	@$(ib_run_snap)$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))set -e; set -f; $(if $(filter-out default,$(origin MAKE_COMMAND)),echo "REFUSING: MAKE_COMMAND is set from outside the makefile"; exit 1; )$(if $(strip $(MAKEFILES)),echo "REFUSING: MAKEFILES is set so make read makefiles before this one that nobody committed or named: unset it"; exit 1; )$(if $(filter-out file,$(origin MAKEFILE_LIST)),echo "REFUSING: MAKEFILE_LIST is set from outside the makefile"; exit 1; )$(if $(filter-out default undefined,$(origin MAKECMDGOALS)),echo "REFUSING: MAKECMDGOALS is set from outside the makefile"; exit 1; )$(if $(filter command% environment%,$(origin SHELL) $(origin .SHELLFLAGS)),echo "REFUSING: SHELL or .SHELLFLAGS comes from the command line or the environment: the recipe would run in another shell"; exit 1; )$(if $(findstring x,$(filter-out --%,$(filter -%,$(.SHELLFLAGS)))),echo "REFUSING: .SHELLFLAGS traces the recipe (-x) and would print every value spliced into it"; exit 1; )\
 	[ -z "$${BASH_ENV:-}$${ENV:-}" ] || { echo "REFUSING: BASH_ENV or ENV is set: a shell startup file ran before this recipe"; exit 1; }; case $$- in *x*) echo "REFUSING: the recipe shell traces its commands (-x) and would print every value spliced into it"; exit 1 ;; esac; \
 	ib_dm=; for m in GNUmakefile makefile Makefile; do if [ -f "$$m" ]; then ib_dm=$$m; break; fi; done; \
 	[ -n "$$ib_dm" ] && git ls-files --error-unmatch -- "$$ib_dm" >/dev/null 2>&1 || { \
@@ -1233,13 +1262,13 @@ release-public: ## Copy the RELEASED :$(VERSION) to $(PUBLIC_REGISTRY) by digest
 	[ "$$ib_cm" -gt 0 ] && [ "$$ib_ce" -gt "$$ib_cm" ] && [ "$$ib_ce" -lt "$$ib_m" ] || { \
 	  echo "REFUSING: $$ib_bf has no build core directly above the image block (exactly one core marker and one core end marker in the file, both before the block's): the block's quoting and image names are the core's, and its guard checks them there. Paste luxarch --emit build-core above the block"; exit 1; }; \
 	ib_nm=$$(awk -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" '(NR >= m && NR <= e || NR >= cm && NR <= ce) && /^override / { s = $$0; sub(/^override +(define +)?/, "", s); sub(/[ \t:=+!?].*/, "", s); printf " %s", s } END { print " " }' "$$ib_bf"); \
-	ib_bad=$$(printf '%s\n' "$$ib_db" | awk -v F="$$ib_bf" -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" -v names="$$ib_nm" -v tg='$(subst ','\'',release publish-sha release-public publish-mirror dev-deploy dev-pin gh-release $@ $(MAKECMDGOALS))' 'function bad(n, w, f, l) { if (index(names, " " n " ") && (w != "" || f != F || (l + 0 < m || l + 0 > e) && (l + 0 < cm || l + 0 > ce))) printf "%s%s at %s:%s; ", n, (w != "" ? " (" w "-specific)" : ""), f, l; else if (w != "" && index(" REGISTRY RELEASE_REGISTRY PUBLIC_REGISTRY PRIVATE_REGISTRY ", " " n " ") && reaches(sc)) printf "%s (%s-specific, %s) at %s:%s; ", n, w, sc, f, l } function reaches(p,   i, k, T, a, b) { k = split(tg, T, " "); i = index(p, "%"); for (a = 1; a <= k; a++) { if (i == 0 && T[a] == p) return 1; if (i > 0 && index(T[a], substr(p, 1, i - 1)) == 1 && length(T[a]) >= length(p) - 1 && substr(T[a], length(T[a]) - (length(p) - i) + 1) == substr(p, i + 1)) return 1 } return 0 } /^# Pattern-specific Variable Values/ { pat = 1 } /^# (Directories|Implicit Rules|Files)/ { pat = 0 } pat && /^[^#].* :$$/ { ph = $$0; sub(/ :$$/, "", ph) } /^# (makefile|\047override\047 directive|environment|environment under -e|command line|default|automatic)( \(from \047.*\047, line [0-9]+\))?$$/ { o = 1; f = ""; l = 0; if (match($$0, /\(from \047.*\047, line [0-9]+\)$$/)) { s = substr($$0, RSTART + 7, RLENGTH - 8); f = s; sub(/\047, line [0-9]+$$/, "", f); l = s; sub(/^.*\047, line /, "", l) } next } o && pat && /^# [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { sc = ph; bad($$2, "pattern", f, l); o = 0; next } o && /^[^#\t ][^:]*: [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { x = $$0; sc = x; sub(/:.*/, "", sc); sub(/^[^:]*: /, "", x); split(x, X, " "); bad(X[1], "target", f, l); o = 0; next } o && /^define [A-Za-z_]/ { bad($$2, "", f, l); o = 0; next } o && /^[A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { bad($$1, "", f, l); o = 0; next } { o = 0 }'); \
+	ib_bad=$$(printf '%s\n' "$$ib_db" | awk -v F="$$ib_bf" -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" -v names="$$ib_nm" -v tg='$(subst ','\'',release publish-sha release-public publish-mirror dev-deploy dev-pin gh-release $@ $(MAKECMDGOALS))' 'function bad(n, w, f, l) { if (index(names, " " n " ") && (w != "" || f != F || (l + 0 < m || l + 0 > e) && (l + 0 < cm || l + 0 > ce))) printf "%s%s at %s:%s; ", n, (w != "" ? " (" w "-specific)" : ""), f, l; else if (w != "" && index(" REGISTRY RELEASE_REGISTRY PUBLIC_REGISTRY PRIVATE_REGISTRY LUXAUDIT_IMAGE LUXAUDIT IMAGE_NAME PLATFORMS ", " " n " ") && reaches(sc)) printf "%s (%s-specific, %s) at %s:%s; ", n, w, sc, f, l } function reaches(p,   i, k, T, a, b) { k = split(tg, T, " "); i = index(p, "%"); for (a = 1; a <= k; a++) { if (i == 0 && T[a] == p) return 1; if (i > 0 && index(T[a], substr(p, 1, i - 1)) == 1 && length(T[a]) >= length(p) - 1 && substr(T[a], length(T[a]) - (length(p) - i) + 1) == substr(p, i + 1)) return 1 } return 0 } /^# Pattern-specific Variable Values/ { pat = 1 } /^# (Directories|Implicit Rules|Files)/ { pat = 0 } pat && /^[^#].* :$$/ { ph = $$0; sub(/ :$$/, "", ph) } /^# (makefile|\047override\047 directive|environment|environment under -e|command line|default|automatic)( \(from \047.*\047, line [0-9]+\))?$$/ { o = 1; f = ""; l = 0; if (match($$0, /\(from \047.*\047, line [0-9]+\)$$/)) { s = substr($$0, RSTART + 7, RLENGTH - 8); f = s; sub(/\047, line [0-9]+$$/, "", f); l = s; sub(/^.*\047, line /, "", l) } next } o && pat && /^# [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { sc = ph; bad($$2, "pattern", f, l); o = 0; next } o && /^[^#\t ][^:]*: [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { x = $$0; sc = x; sub(/:.*/, "", sc); sub(/^[^:]*: /, "", x); split(x, X, " "); bad(X[1], "target", f, l); o = 0; next } o && /^define [A-Za-z_]/ { bad($$2, "", f, l); o = 0; next } o && /^[A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { bad($$1, "", f, l); o = 0; next } { o = 0 }'); \
 	[ -z "$$ib_bad" ] || { echo "REFUSING: make's own database (a clean evaluation with these goals) defines what the image block defines from outside the block: $${ib_bad%; }. The block's names are set inside it only."; exit 1; }; \
 	$(require_registry); $(require_images)$(require_build_inputs)$(public_gate); $(require_scanner); \
 	$(call image_block_each,public_refuse,;); \
 	$(call image_block_each,public_scan)\
 	$(call image_block_each,public_copy,;); \
-	echo "published "$(call sq,$(call image_block_each,public_said,$(IMAGE_BLOCK_COMMA)))", the same digest"
+	echo "published "$(call sq,$(call image_block_each,public_said,$(IMAGE_BLOCK_COMMA)))", the same digest"$(ib_unchanged)
 endif
 
 # ── A tool mirror: a pinned upstream tool image, tagged by the UPSTREAM version ──────────────────
@@ -1281,7 +1310,7 @@ $(if $(filter MIRROR,$(IMAGE_LIST)),echo "REFUSING: IMAGES lists MIRROR: that pr
 endef
 
 publish-mirror: ## Build + scan + PUSH the pinned tool mirror :$(MIRROR_VERSION) (the MIRROR_* settings above the block)
-	@$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))set -e; set -f; $(if $(filter-out default,$(origin MAKE_COMMAND)),echo "REFUSING: MAKE_COMMAND is set from outside the makefile"; exit 1; )$(if $(strip $(MAKEFILES)),echo "REFUSING: MAKEFILES is set so make read makefiles before this one that nobody committed or named: unset it"; exit 1; )$(if $(filter-out file,$(origin MAKEFILE_LIST)),echo "REFUSING: MAKEFILE_LIST is set from outside the makefile"; exit 1; )$(if $(filter-out default undefined,$(origin MAKECMDGOALS)),echo "REFUSING: MAKECMDGOALS is set from outside the makefile"; exit 1; )$(if $(filter command% environment%,$(origin SHELL) $(origin .SHELLFLAGS)),echo "REFUSING: SHELL or .SHELLFLAGS comes from the command line or the environment: the recipe would run in another shell"; exit 1; )$(if $(findstring x,$(filter-out --%,$(filter -%,$(.SHELLFLAGS)))),echo "REFUSING: .SHELLFLAGS traces the recipe (-x) and would print every value spliced into it"; exit 1; )\
+	@$(ib_run_snap)$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))set -e; set -f; $(if $(filter-out default,$(origin MAKE_COMMAND)),echo "REFUSING: MAKE_COMMAND is set from outside the makefile"; exit 1; )$(if $(strip $(MAKEFILES)),echo "REFUSING: MAKEFILES is set so make read makefiles before this one that nobody committed or named: unset it"; exit 1; )$(if $(filter-out file,$(origin MAKEFILE_LIST)),echo "REFUSING: MAKEFILE_LIST is set from outside the makefile"; exit 1; )$(if $(filter-out default undefined,$(origin MAKECMDGOALS)),echo "REFUSING: MAKECMDGOALS is set from outside the makefile"; exit 1; )$(if $(filter command% environment%,$(origin SHELL) $(origin .SHELLFLAGS)),echo "REFUSING: SHELL or .SHELLFLAGS comes from the command line or the environment: the recipe would run in another shell"; exit 1; )$(if $(findstring x,$(filter-out --%,$(filter -%,$(.SHELLFLAGS)))),echo "REFUSING: .SHELLFLAGS traces the recipe (-x) and would print every value spliced into it"; exit 1; )\
 	[ -z "$${BASH_ENV:-}$${ENV:-}" ] || { echo "REFUSING: BASH_ENV or ENV is set: a shell startup file ran before this recipe"; exit 1; }; case $$- in *x*) echo "REFUSING: the recipe shell traces its commands (-x) and would print every value spliced into it"; exit 1 ;; esac; \
 	ib_dm=; for m in GNUmakefile makefile Makefile; do if [ -f "$$m" ]; then ib_dm=$$m; break; fi; done; \
 	[ -n "$$ib_dm" ] && git ls-files --error-unmatch -- "$$ib_dm" >/dev/null 2>&1 || { \
@@ -1304,17 +1333,18 @@ publish-mirror: ## Build + scan + PUSH the pinned tool mirror :$(MIRROR_VERSION)
 	[ "$$ib_cm" -gt 0 ] && [ "$$ib_ce" -gt "$$ib_cm" ] && [ "$$ib_ce" -lt "$$ib_m" ] || { \
 	  echo "REFUSING: $$ib_bf has no build core directly above the image block (exactly one core marker and one core end marker in the file, both before the block's): the block's quoting and image names are the core's, and its guard checks them there. Paste luxarch --emit build-core above the block"; exit 1; }; \
 	ib_nm=$$(awk -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" '(NR >= m && NR <= e || NR >= cm && NR <= ce) && /^override / { s = $$0; sub(/^override +(define +)?/, "", s); sub(/[ \t:=+!?].*/, "", s); printf " %s", s } END { print " " }' "$$ib_bf"); \
-	ib_bad=$$(printf '%s\n' "$$ib_db" | awk -v F="$$ib_bf" -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" -v names="$$ib_nm" -v tg='$(subst ','\'',release publish-sha release-public publish-mirror dev-deploy dev-pin gh-release $@ $(MAKECMDGOALS))' 'function bad(n, w, f, l) { if (index(names, " " n " ") && (w != "" || f != F || (l + 0 < m || l + 0 > e) && (l + 0 < cm || l + 0 > ce))) printf "%s%s at %s:%s; ", n, (w != "" ? " (" w "-specific)" : ""), f, l; else if (w != "" && index(" REGISTRY RELEASE_REGISTRY PUBLIC_REGISTRY PRIVATE_REGISTRY ", " " n " ") && reaches(sc)) printf "%s (%s-specific, %s) at %s:%s; ", n, w, sc, f, l } function reaches(p,   i, k, T, a, b) { k = split(tg, T, " "); i = index(p, "%"); for (a = 1; a <= k; a++) { if (i == 0 && T[a] == p) return 1; if (i > 0 && index(T[a], substr(p, 1, i - 1)) == 1 && length(T[a]) >= length(p) - 1 && substr(T[a], length(T[a]) - (length(p) - i) + 1) == substr(p, i + 1)) return 1 } return 0 } /^# Pattern-specific Variable Values/ { pat = 1 } /^# (Directories|Implicit Rules|Files)/ { pat = 0 } pat && /^[^#].* :$$/ { ph = $$0; sub(/ :$$/, "", ph) } /^# (makefile|\047override\047 directive|environment|environment under -e|command line|default|automatic)( \(from \047.*\047, line [0-9]+\))?$$/ { o = 1; f = ""; l = 0; if (match($$0, /\(from \047.*\047, line [0-9]+\)$$/)) { s = substr($$0, RSTART + 7, RLENGTH - 8); f = s; sub(/\047, line [0-9]+$$/, "", f); l = s; sub(/^.*\047, line /, "", l) } next } o && pat && /^# [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { sc = ph; bad($$2, "pattern", f, l); o = 0; next } o && /^[^#\t ][^:]*: [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { x = $$0; sc = x; sub(/:.*/, "", sc); sub(/^[^:]*: /, "", x); split(x, X, " "); bad(X[1], "target", f, l); o = 0; next } o && /^define [A-Za-z_]/ { bad($$2, "", f, l); o = 0; next } o && /^[A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { bad($$1, "", f, l); o = 0; next } { o = 0 }'); \
+	ib_bad=$$(printf '%s\n' "$$ib_db" | awk -v F="$$ib_bf" -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" -v names="$$ib_nm" -v tg='$(subst ','\'',release publish-sha release-public publish-mirror dev-deploy dev-pin gh-release $@ $(MAKECMDGOALS))' 'function bad(n, w, f, l) { if (index(names, " " n " ") && (w != "" || f != F || (l + 0 < m || l + 0 > e) && (l + 0 < cm || l + 0 > ce))) printf "%s%s at %s:%s; ", n, (w != "" ? " (" w "-specific)" : ""), f, l; else if (w != "" && index(" REGISTRY RELEASE_REGISTRY PUBLIC_REGISTRY PRIVATE_REGISTRY LUXAUDIT_IMAGE LUXAUDIT IMAGE_NAME PLATFORMS ", " " n " ") && reaches(sc)) printf "%s (%s-specific, %s) at %s:%s; ", n, w, sc, f, l } function reaches(p,   i, k, T, a, b) { k = split(tg, T, " "); i = index(p, "%"); for (a = 1; a <= k; a++) { if (i == 0 && T[a] == p) return 1; if (i > 0 && index(T[a], substr(p, 1, i - 1)) == 1 && length(T[a]) >= length(p) - 1 && substr(T[a], length(T[a]) - (length(p) - i) + 1) == substr(p, i + 1)) return 1 } return 0 } /^# Pattern-specific Variable Values/ { pat = 1 } /^# (Directories|Implicit Rules|Files)/ { pat = 0 } pat && /^[^#].* :$$/ { ph = $$0; sub(/ :$$/, "", ph) } /^# (makefile|\047override\047 directive|environment|environment under -e|command line|default|automatic)( \(from \047.*\047, line [0-9]+\))?$$/ { o = 1; f = ""; l = 0; if (match($$0, /\(from \047.*\047, line [0-9]+\)$$/)) { s = substr($$0, RSTART + 7, RLENGTH - 8); f = s; sub(/\047, line [0-9]+$$/, "", f); l = s; sub(/^.*\047, line /, "", l) } next } o && pat && /^# [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { sc = ph; bad($$2, "pattern", f, l); o = 0; next } o && /^[^#\t ][^:]*: [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { x = $$0; sc = x; sub(/:.*/, "", sc); sub(/^[^:]*: /, "", x); split(x, X, " "); bad(X[1], "target", f, l); o = 0; next } o && /^define [A-Za-z_]/ { bad($$2, "", f, l); o = 0; next } o && /^[A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { bad($$1, "", f, l); o = 0; next } { o = 0 }'); \
 	[ -z "$$ib_bad" ] || { echo "REFUSING: make's own database (a clean evaluation with these goals) defines what the image block defines from outside the block: $${ib_bad%; }. The block's names are set inside it only."; exit 1; }; \
 	$(require_mirror); $(require_registry); $(require_images)$(require_build_inputs)$(refuse_dirty_tree); $(require_scanner); \
 	$(call refuse_published,$(MIRROR_IMAGE),A mirror tag is immutable: bump MIRROR_VERSION to mirror another upstream version.); \
-	$(export_head); \
+	$(export_tree); \
 	$(call export_contained,MIRROR); \
+	$(export_build_args); \
 	docker build --load --target $(call sq,$(call img_target,MIRROR)) $(call sqw,$(BUILD_ARGS)) --build-arg $(call sq,MIRROR_VERSION=$(MIRROR_VERSION)) -f $(call sq,$(call img_dockerfile,MIRROR)) -t $(call sq,$(MIRROR_IMAGE)) $(call sq,$(call img_context,MIRROR)); \
 	$(call scan_candidate,$(MIRROR_IMAGE)); \
 	docker push $(call sq,$(MIRROR_IMAGE)); \
 	$(export_leave); \
-	echo "mirrored "$(call sq,$(MIRROR_IMAGE))": pin it as MIRROR_IMAGE"
+	echo "mirrored "$(call sq,$(MIRROR_IMAGE))": pin it as MIRROR_IMAGE"$(ib_unchanged)
 
 # ── Point an environment at a build ─────────────────────────────────────────────────────────────
 # Immutable tags move a burden: a NEW tag per build has to actually reach the stack. This block used
@@ -1361,9 +1391,31 @@ DEV_WAIT_TIMEOUT ?= 120
 # `:__TAG__`, substitutes TAG into the rendered copy (the tracked overlay is never written, so the
 # next build's tree stays clean), refuses any `__X__` placeholder still left, applies it, and waits on
 # each workload it applied, in its namespace (rollout, a Job's completion, a Pod's readiness). v18 had no such lane, so a k3s-deployed repo could not adopt the
-# block at all. DEV_KUBECTL is the kubectl to run (set its context with `--context <ctx>`).
+# block at all.
+# v20: DEV_PRE_OVERLAYS are committed kustomizations applied, in order, before DEV_OVERLAY: what must
+# exist or finish before the app rolls out (a Secret, the migration Job, cluster-scoped config). Each
+# is rendered from HEAD with the same checks (an image the block publishes runs only at `:__TAG__`; no
+# `__X__` placeholder left), every overlay renders and passes them before any is applied, and each is
+# applied and waited on before the next: a Job that does not complete prints its logs and stops the
+# deploy before the app's rollout. DEV_KUSTOMIZE renders on this machine; DEV_KUBECTL talks to the
+# cluster and reads every manifest on its stdin, so it can be a kubectl on another host
+# (`DEV_KUBECTL := ssh <node> kubectl`), or a local one with `--context <ctx>`.
+# v21: `DEV_DEPLOY := none` declares that this makefile deploys no dev stack: it publishes a tool
+# mirror only (`publish-mirror`), as a makefile for an embedded toolchain does. `dev-deploy` and
+# `dev-pin` then refuse and run nothing, so there is no deploy to probe (`repo.stack_smoke_wired`) and
+# no `compose up` to judge (`repo.compose_up_selects_services`).
 DEV_DEPLOY ?= compose
+override IB_NO_STACK := DEV_DEPLOY is none: this makefile deploys no dev stack (it publishes a tool mirror only: make publish-mirror)
 DEV_OVERLAY ?= k8s/overlays/dev
+DEV_PRE_OVERLAYS ?=
+# v21: the overlays applied SERVER-SIDE, under DEV_FIELD_MANAGER as the owner of their fields
+# (`apply --server-side --field-manager=<it> --force-conflicts`): cluster-scoped config another
+# controller also writes (a k3s HelmChartConfig in kube-system, a storage operator's CRs), which the
+# repo takes over and records itself as owning. Each must be one of DEV_PRE_OVERLAYS or DEV_OVERLAY;
+# every other overlay is applied client-side, as before.
+DEV_SERVER_SIDE ?=
+DEV_FIELD_MANAGER ?=
+DEV_KUSTOMIZE ?= kubectl kustomize
 DEV_KUBECTL ?= kubectl
 
 # v15: a file with more than one `TAG=` line refuses. v14 rewrote the first, and compose reads the
@@ -1506,9 +1558,9 @@ endef
 # deploy that restarted the stack is not one that works: the suite runs in-process and cannot see the
 # proxy, the server, the production image or a standalone entry point.
 dev-deploy: ## Build+push THIS commit (:sha-…, never the version), pin $(DEV_ENV_FILE) to it, restart the dev stack, smoke it
-	@$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))$(MAKE) --no-print-directory publish-sha
-	@$(MAKE) --no-print-directory dev-pin TAG=sha-$(call sq,$(COMMIT))
-	@$(MAKE) --no-print-directory smoke
+	@$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))$(if $(filter none,$(DEV_DEPLOY)),echo "REFUSING: "$(call sq,$(IB_NO_STACK)); exit 1,$(MAKE) --no-print-directory publish-sha)
+	@$(if $(filter none,$(DEV_DEPLOY)),:,$(MAKE) --no-print-directory dev-pin TAG=sha-$(call sq,$(COMMIT)))
+	@$(if $(filter none,$(DEV_DEPLOY)),:,$(MAKE) --no-print-directory smoke)
 
 # The rollback path, and the only one that does not build: name a tag you already published.
 # The registry is checked FIRST because the alternative is the outage above — a stack pinned to a
@@ -1522,8 +1574,9 @@ endef
 # v17: DEV_ENV_FILE reaches the shell as one word, so it must be one plain path (a space would pin
 # one file and start the stack from another, or from none).
 override define require_dev_deploy
-case $(call sq,$(DEV_DEPLOY)) in compose|kustomize) ;; *) \
-  echo "REFUSING: DEV_DEPLOY must be compose or kustomize, not "$(call sq,$(DEV_DEPLOY)); exit 1 ;; esac
+case $(call sq,$(DEV_DEPLOY)) in compose|kustomize) ;; \
+  none) echo "REFUSING: "$(call sq,$(IB_NO_STACK)); exit 1 ;; \
+  *) echo "REFUSING: DEV_DEPLOY must be compose, kustomize or none, not "$(call sq,$(DEV_DEPLOY)); exit 1 ;; esac
 endef
 
 # v19: each image the block publishes runs, in the rendered dev overlay, as exactly
@@ -1531,11 +1584,12 @@ endef
 # kubelet pulls instead of the tag), no tag (`:latest`), a suffixed tag, or another tag; and at least
 # one `image:` does. Only `image:` values are read (a pin in an annotation runs nothing), and a name is
 # the whole value up to its digest (`@`) and its tag (the last `:` after the last `/`; a registry's
-# `:<port>` is part of the name), so another registry's `x<registry>/<name>` is not this image.
+# `:<port>` is part of the name), so another registry's `x<registry>/<name>` is not this image. The
+# "at least one" holds for DEV_OVERLAY (`$$km` set); a pre-overlay may run none of them (a Secret).
 override define dev_kustomize_image
 kv=$$(awk -v b=$(call sq,$(call img_base,$(1))) '/^[ \t]*(- )?image:[ \t]/ { v = $$0; sub(/^[ \t]*(- )?image:[ \t]*/, "", v); sub(/[ \t]+$$/, "", v); gsub(/^["\047]|["\047]$$/, "", v); n = v; sub(/@.*/, "", n); if (match(n, /:[^\/]*$$/)) n = substr(n, 1, RSTART - 1); if (n != b) next; if (v == b ":__TAG__") ok = 1; else bad = bad " " v } END { if (bad != "") print "BAD" bad; else if (!ok) print "NONE" }' "$$kr"); \
-case "$$kv" in NONE) \
-  echo "REFUSING: the rendered dev overlay $$ov runs no container at "$(call sq,$(call img_base,$(1)))":__TAG__ (pin it with images: - name: … newTag: __TAG__): the tag dev-pin pins must be the one that runs"; exit 1 ;; \
+case "$$kv" in NONE) [ -z "$$km" ] || { \
+  echo "REFUSING: the rendered dev overlay $$ov runs no container at "$(call sq,$(call img_base,$(1)))":__TAG__ (pin it with images: - name: … newTag: __TAG__): the tag dev-pin pins must be the one that runs"; exit 1; } ;; \
 BAD*) echo "REFUSING: the rendered dev overlay $$ov also runs "$(call sq,$(call img_base,$(1)))" as:$${kv#BAD} (only :__TAG__, exactly, is the pin: not a digest, no tag, nor another tag)"; exit 1 ;; esac
 endef
 
@@ -1543,28 +1597,51 @@ endef
 # so an edited or untracked file in the working tree never reaches the cluster. The workloads waited
 # on are read from the render with their namespace: `rollout status` for a Deployment, StatefulSet or
 # DaemonSet, completion for a Job, Ready for a Pod (a CronJob runs on its schedule, not at deploy).
+# v20: every overlay (DEV_PRE_OVERLAYS in order, then DEV_OVERLAY) is rendered and checked before any
+# is applied, so a bad app overlay never leaves a migration run against the cluster; then each is
+# applied and its workloads waited on before the next is applied. A Job's template cannot change once
+# the Job exists, so each Job an overlay holds is deleted just before that overlay is applied: the
+# next deploy runs the migration again at its own TAG, and a retry re-runs a Job that failed. A Job
+# that does not complete prints its logs. Every manifest reaches DEV_KUBECTL on its stdin
+# (`apply -f -`), never as a local path. Each overlay is spelled one way (no `./`, `//` or trailing
+# `/`), so no overlay is applied twice under two spellings.
 override define dev_kustomize
-ov=$(call sq,$(DEV_OVERLAY)); \
-case "$$ov" in ''|-*|/*|*..*|*[!A-Za-z0-9._/-]*) echo "REFUSING: DEV_OVERLAY must be one plain path inside the repo (letters, digits, . _ / -), not $$ov"; exit 1 ;; esac; \
-{ git cat-file -e "HEAD:$$ov/kustomization.yaml" || git cat-file -e "HEAD:$$ov/kustomization.yml"; } 2>/dev/null || { \
-  echo "REFUSING: $$ov holds no committed kustomization: the dev overlay is what runs, so it must be committed"; exit 1; }; \
-kd=$$(mktemp -d); kr=$$kd/render.yaml; ka=$$kd/apply.yaml; trap 'rm -rf "$$kd"' EXIT; \
-mkdir "$$kd/src" && git archive --format=tar HEAD | tar -x -C "$$kd/src" || { echo "REFUSING: could not export HEAD to render the dev overlay from"; exit 1; }; \
-$(call sqw,$(DEV_KUBECTL)) kustomize "$$kd/src/$$ov" > "$$kr" || { echo "REFUSING: kubectl kustomize could not render $$ov (as committed)"; exit 1; }; \
-$(call image_block_each,dev_kustomize_image,;); \
-sed -e "s|__TAG__|"$(call sq,$(TAG))"|g" "$$kr" > "$$ka" || exit 1; \
-kl=$$(grep -o '__[A-Z][A-Z0-9_]*__' "$$ka" | sort -u | tr '\n' ' '); \
-[ -z "$$kl" ] || { echo "REFUSING: the rendered dev overlay $$ov still holds $$kl once TAG is substituted: the dev deploy substitutes __TAG__ only"; exit 1; }; \
-kw=$$(awk 'function out() { if (k != "" && nm != "") print k "|" nm "|" ns } /^---/ { out(); k = ""; nm = ""; ns = ""; md = 0; next } /^kind:[ \t]/ { k = $$2 } /^metadata:/ { md = 1; next } /^[^ \t]/ { md = 0 } md && /^  name:[ \t]/ { nm = $$2 } md && /^  namespace:[ \t]/ { ns = $$2 } END { out() }' "$$ka" | tr -d "\"'"); \
-$(call sqw,$(DEV_KUBECTL)) apply -f "$$ka" >/dev/null || { echo "FAIL  kubectl apply of the rendered dev overlay $$ov failed"; exit 1; }; \
-for w in $$kw; do k=$${w%%|*}; r=$${w#*|}; nm=$${r%%|*}; ns=$${r#*|}; set -- $${ns:+-n "$$ns"}; \
-  case "$$k" in \
-    Deployment|StatefulSet|DaemonSet) $(call sqw,$(DEV_KUBECTL)) rollout status "$$@" "$$k/$$nm" --timeout=$(call sq,$(DEV_WAIT_TIMEOUT))s ;; \
-    Job) $(call sqw,$(DEV_KUBECTL)) wait "$$@" --for=condition=complete "job/$$nm" --timeout=$(call sq,$(DEV_WAIT_TIMEOUT))s ;; \
-    Pod) $(call sqw,$(DEV_KUBECTL)) wait "$$@" --for=condition=Ready "pod/$$nm" --timeout=$(call sq,$(DEV_WAIT_TIMEOUT))s ;; \
-    *) true ;; \
-  esac || { echo "FAIL  $$k/$$nm$${ns:+ (namespace $$ns)} did not become ready within "$(call sq,$(DEV_WAIT_TIMEOUT))"s"; exit 1; }; done; \
-echo "$$ov: applied at TAG="$(call sq,$(TAG))
+kd=$$(mktemp -d); trap 'rm -rf "$$kd"' EXIT; \
+mkdir "$$kd/src" && git archive --format=tar HEAD | tar -x -C "$$kd/src" || { echo "REFUSING: could not export HEAD to render the dev overlays from"; exit 1; }; \
+kn=0; kall=; for ov in $(call sqw,$(DEV_PRE_OVERLAYS)) $(call sq,$(DEV_OVERLAY)); do \
+  case "$$ov" in ''|-*|/*|*..*|*[!A-Za-z0-9._/-]*|.|./*|*/.|*/./*|*//*|*/) echo "REFUSING: DEV_OVERLAY and each of DEV_PRE_OVERLAYS must be one plain path inside the repo, spelled one way (letters, digits, . _ / -; no ./, //, /./ or trailing /), not $$ov"; exit 1 ;; esac; \
+  case " $$kall " in *" $$ov "*) echo "REFUSING: $$ov is listed twice (DEV_PRE_OVERLAYS, DEV_OVERLAY): each overlay is applied once"; exit 1 ;; esac; kall="$$kall $$ov"; \
+  { git cat-file -e "HEAD:$$ov/kustomization.yaml" || git cat-file -e "HEAD:$$ov/kustomization.yml"; } 2>/dev/null || { \
+    echo "REFUSING: $$ov holds no committed kustomization: a dev overlay is what runs, so it must be committed"; exit 1; }; \
+  kn=$$((kn + 1)); kr=$$kd/$$kn.render.yaml; ka=$$kd/$$kn.apply.yaml; km=; [ "$$ov" != $(call sq,$(DEV_OVERLAY)) ] || km=1; \
+  $(call sqw,$(DEV_KUSTOMIZE)) "$$kd/src/$$ov" > "$$kr" || { echo "REFUSING: "$(call sq,$(DEV_KUSTOMIZE))" could not render $$ov (as committed)"; exit 1; }; \
+  $(call image_block_each,dev_kustomize_image,;); \
+  sed -e "s|__TAG__|"$(call sq,$(TAG))"|g" "$$kr" > "$$ka" || exit 1; \
+  kl=$$(grep -o '__[A-Z][A-Z0-9_]*__' "$$ka" | sort -u | tr '\n' ' '); \
+  [ -z "$$kl" ] || { echo "REFUSING: the rendered dev overlay $$ov still holds $$kl once TAG is substituted: the dev deploy substitutes __TAG__ only"; exit 1; }; \
+  printf '%s\n' "$$ov" > "$$kd/$$kn.name"; \
+done; \
+ksv=$(call sq,$(strip $(DEV_SERVER_SIDE))); ksm=$(call sq,$(strip $(DEV_FIELD_MANAGER))); \
+for s in $$ksv; do case " $$kall " in *" $$s "*) ;; *) \
+  echo "REFUSING: DEV_SERVER_SIDE names $$s, which is not one of DEV_PRE_OVERLAYS or DEV_OVERLAY (spelled as they are)"; exit 1 ;; esac; done; \
+[ -z "$$ksv" ] || printf '%s\n' "$$ksm" | grep -Eqx '[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?' || { \
+  echo "REFUSING: DEV_SERVER_SIDE needs DEV_FIELD_MANAGER, the name server-side apply records as the owner of those fields (lowercase letters, digits and -, e.g. myapp-deploy)"; exit 1; }; \
+ki=0; while [ "$$ki" -lt "$$kn" ]; do ki=$$((ki + 1)); ka=$$kd/$$ki.apply.yaml; ov=$$(cat "$$kd/$$ki.name"); \
+  ksa=; case " $$ksv " in *" $$ov "*) ksa="--server-side --field-manager=$$ksm --force-conflicts" ;; esac; \
+  kw=$$(awk 'function out() { if (k != "" && nm != "") print k "|" nm "|" ns } /^---/ { out(); k = ""; nm = ""; ns = ""; md = 0; next } /^kind:[ \t]/ { k = $$2 } /^metadata:/ { md = 1; next } /^[^ \t]/ { md = 0 } md && /^  name:[ \t]/ { nm = $$2 } md && /^  namespace:[ \t]/ { ns = $$2 } END { out() }' "$$ka" | tr -d "\"'"); \
+  for w in $$kw; do case "$${w%%|*}" in Job) r=$${w#*|}; nm=$${r%%|*}; ns=$${r#*|}; set -- $${ns:+-n "$$ns"}; \
+    $(call sqw,$(DEV_KUBECTL)) delete "$$@" "job/$$nm" --ignore-not-found >/dev/null || { echo "FAIL  could not delete the previous job/$$nm$${ns:+ (namespace $$ns)} before applying $$ov"; exit 1; } ;; esac; done; \
+  $(call sqw,$(DEV_KUBECTL)) apply $$ksa -f - < "$$ka" >/dev/null || { echo "FAIL  kubectl apply$${ksa:+ (server-side)} of the rendered dev overlay $$ov failed"; exit 1; }; \
+  for w in $$kw; do k=$${w%%|*}; r=$${w#*|}; nm=$${r%%|*}; ns=$${r#*|}; set -- $${ns:+-n "$$ns"}; \
+    case "$$k" in \
+      Deployment|StatefulSet|DaemonSet) $(call sqw,$(DEV_KUBECTL)) rollout status "$$@" "$$k/$$nm" --timeout=$(call sq,$(DEV_WAIT_TIMEOUT))s ;; \
+      Job) $(call sqw,$(DEV_KUBECTL)) wait "$$@" --for=condition=complete "job/$$nm" --timeout=$(call sq,$(DEV_WAIT_TIMEOUT))s || { \
+        echo "FAIL  job/$$nm$${ns:+ (namespace $$ns)} in $$ov did not complete; its logs:"; $(call sqw,$(DEV_KUBECTL)) logs "$$@" "job/$$nm" --tail=200 || true; false; } ;; \
+      Pod) $(call sqw,$(DEV_KUBECTL)) wait "$$@" --for=condition=Ready "pod/$$nm" --timeout=$(call sq,$(DEV_WAIT_TIMEOUT))s ;; \
+      *) true ;; \
+    esac || { echo "FAIL  $$k/$$nm$${ns:+ (namespace $$ns)} did not become ready within "$(call sq,$(DEV_WAIT_TIMEOUT))"s"; exit 1; }; done; \
+  echo "$$ov: applied at TAG="$(call sq,$(TAG)); \
+done
 endef
 
 override define require_dev_env_file
@@ -1617,7 +1694,7 @@ fi
 endef
 
 dev-pin: ## Point the dev stack (compose, or the kustomize dev overlay) at an ALREADY-PUBLISHED tag and restart it (rollback path)
-	@$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))set -e; set -f; $(if $(filter-out default,$(origin MAKE_COMMAND)),echo "REFUSING: MAKE_COMMAND is set from outside the makefile"; exit 1; )$(if $(strip $(MAKEFILES)),echo "REFUSING: MAKEFILES is set so make read makefiles before this one that nobody committed or named: unset it"; exit 1; )$(if $(filter-out file,$(origin MAKEFILE_LIST)),echo "REFUSING: MAKEFILE_LIST is set from outside the makefile"; exit 1; )$(if $(filter-out default undefined,$(origin MAKECMDGOALS)),echo "REFUSING: MAKECMDGOALS is set from outside the makefile"; exit 1; )$(if $(filter command% environment%,$(origin SHELL) $(origin .SHELLFLAGS)),echo "REFUSING: SHELL or .SHELLFLAGS comes from the command line or the environment: the recipe would run in another shell"; exit 1; )$(if $(findstring x,$(filter-out --%,$(filter -%,$(.SHELLFLAGS)))),echo "REFUSING: .SHELLFLAGS traces the recipe (-x) and would print every value spliced into it"; exit 1; )\
+	@$(ib_run_snap)$(if $(and $(value sq),$(value sqw),$(value img_dockerfile)),,$(error REFUSING: the image block (v18) builds with the build core's quoting and image helpers (sq, sqw, img_*), which this makefile does not define. Paste `luxarch --emit build-core` directly above the image block))set -e; set -f; $(if $(filter-out default,$(origin MAKE_COMMAND)),echo "REFUSING: MAKE_COMMAND is set from outside the makefile"; exit 1; )$(if $(strip $(MAKEFILES)),echo "REFUSING: MAKEFILES is set so make read makefiles before this one that nobody committed or named: unset it"; exit 1; )$(if $(filter-out file,$(origin MAKEFILE_LIST)),echo "REFUSING: MAKEFILE_LIST is set from outside the makefile"; exit 1; )$(if $(filter-out default undefined,$(origin MAKECMDGOALS)),echo "REFUSING: MAKECMDGOALS is set from outside the makefile"; exit 1; )$(if $(filter command% environment%,$(origin SHELL) $(origin .SHELLFLAGS)),echo "REFUSING: SHELL or .SHELLFLAGS comes from the command line or the environment: the recipe would run in another shell"; exit 1; )$(if $(findstring x,$(filter-out --%,$(filter -%,$(.SHELLFLAGS)))),echo "REFUSING: .SHELLFLAGS traces the recipe (-x) and would print every value spliced into it"; exit 1; )\
 	[ -z "$${BASH_ENV:-}$${ENV:-}" ] || { echo "REFUSING: BASH_ENV or ENV is set: a shell startup file ran before this recipe"; exit 1; }; case $$- in *x*) echo "REFUSING: the recipe shell traces its commands (-x) and would print every value spliced into it"; exit 1 ;; esac; \
 	ib_dm=; for m in GNUmakefile makefile Makefile; do if [ -f "$$m" ]; then ib_dm=$$m; break; fi; done; \
 	[ -n "$$ib_dm" ] && git ls-files --error-unmatch -- "$$ib_dm" >/dev/null 2>&1 || { \
@@ -1640,11 +1717,11 @@ dev-pin: ## Point the dev stack (compose, or the kustomize dev overlay) at an AL
 	[ "$$ib_cm" -gt 0 ] && [ "$$ib_ce" -gt "$$ib_cm" ] && [ "$$ib_ce" -lt "$$ib_m" ] || { \
 	  echo "REFUSING: $$ib_bf has no build core directly above the image block (exactly one core marker and one core end marker in the file, both before the block's): the block's quoting and image names are the core's, and its guard checks them there. Paste luxarch --emit build-core above the block"; exit 1; }; \
 	ib_nm=$$(awk -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" '(NR >= m && NR <= e || NR >= cm && NR <= ce) && /^override / { s = $$0; sub(/^override +(define +)?/, "", s); sub(/[ \t:=+!?].*/, "", s); printf " %s", s } END { print " " }' "$$ib_bf"); \
-	ib_bad=$$(printf '%s\n' "$$ib_db" | awk -v F="$$ib_bf" -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" -v names="$$ib_nm" -v tg='$(subst ','\'',release publish-sha release-public publish-mirror dev-deploy dev-pin gh-release $@ $(MAKECMDGOALS))' 'function bad(n, w, f, l) { if (index(names, " " n " ") && (w != "" || f != F || (l + 0 < m || l + 0 > e) && (l + 0 < cm || l + 0 > ce))) printf "%s%s at %s:%s; ", n, (w != "" ? " (" w "-specific)" : ""), f, l; else if (w != "" && index(" REGISTRY RELEASE_REGISTRY PUBLIC_REGISTRY PRIVATE_REGISTRY ", " " n " ") && reaches(sc)) printf "%s (%s-specific, %s) at %s:%s; ", n, w, sc, f, l } function reaches(p,   i, k, T, a, b) { k = split(tg, T, " "); i = index(p, "%"); for (a = 1; a <= k; a++) { if (i == 0 && T[a] == p) return 1; if (i > 0 && index(T[a], substr(p, 1, i - 1)) == 1 && length(T[a]) >= length(p) - 1 && substr(T[a], length(T[a]) - (length(p) - i) + 1) == substr(p, i + 1)) return 1 } return 0 } /^# Pattern-specific Variable Values/ { pat = 1 } /^# (Directories|Implicit Rules|Files)/ { pat = 0 } pat && /^[^#].* :$$/ { ph = $$0; sub(/ :$$/, "", ph) } /^# (makefile|\047override\047 directive|environment|environment under -e|command line|default|automatic)( \(from \047.*\047, line [0-9]+\))?$$/ { o = 1; f = ""; l = 0; if (match($$0, /\(from \047.*\047, line [0-9]+\)$$/)) { s = substr($$0, RSTART + 7, RLENGTH - 8); f = s; sub(/\047, line [0-9]+$$/, "", f); l = s; sub(/^.*\047, line /, "", l) } next } o && pat && /^# [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { sc = ph; bad($$2, "pattern", f, l); o = 0; next } o && /^[^#\t ][^:]*: [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { x = $$0; sc = x; sub(/:.*/, "", sc); sub(/^[^:]*: /, "", x); split(x, X, " "); bad(X[1], "target", f, l); o = 0; next } o && /^define [A-Za-z_]/ { bad($$2, "", f, l); o = 0; next } o && /^[A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { bad($$1, "", f, l); o = 0; next } { o = 0 }'); \
+	ib_bad=$$(printf '%s\n' "$$ib_db" | awk -v F="$$ib_bf" -v m="$$ib_m" -v e="$$ib_e" -v cm="$$ib_cm" -v ce="$$ib_ce" -v names="$$ib_nm" -v tg='$(subst ','\'',release publish-sha release-public publish-mirror dev-deploy dev-pin gh-release $@ $(MAKECMDGOALS))' 'function bad(n, w, f, l) { if (index(names, " " n " ") && (w != "" || f != F || (l + 0 < m || l + 0 > e) && (l + 0 < cm || l + 0 > ce))) printf "%s%s at %s:%s; ", n, (w != "" ? " (" w "-specific)" : ""), f, l; else if (w != "" && index(" REGISTRY RELEASE_REGISTRY PUBLIC_REGISTRY PRIVATE_REGISTRY LUXAUDIT_IMAGE LUXAUDIT IMAGE_NAME PLATFORMS ", " " n " ") && reaches(sc)) printf "%s (%s-specific, %s) at %s:%s; ", n, w, sc, f, l } function reaches(p,   i, k, T, a, b) { k = split(tg, T, " "); i = index(p, "%"); for (a = 1; a <= k; a++) { if (i == 0 && T[a] == p) return 1; if (i > 0 && index(T[a], substr(p, 1, i - 1)) == 1 && length(T[a]) >= length(p) - 1 && substr(T[a], length(T[a]) - (length(p) - i) + 1) == substr(p, i + 1)) return 1 } return 0 } /^# Pattern-specific Variable Values/ { pat = 1 } /^# (Directories|Implicit Rules|Files)/ { pat = 0 } pat && /^[^#].* :$$/ { ph = $$0; sub(/ :$$/, "", ph) } /^# (makefile|\047override\047 directive|environment|environment under -e|command line|default|automatic)( \(from \047.*\047, line [0-9]+\))?$$/ { o = 1; f = ""; l = 0; if (match($$0, /\(from \047.*\047, line [0-9]+\)$$/)) { s = substr($$0, RSTART + 7, RLENGTH - 8); f = s; sub(/\047, line [0-9]+$$/, "", f); l = s; sub(/^.*\047, line /, "", l) } next } o && pat && /^# [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { sc = ph; bad($$2, "pattern", f, l); o = 0; next } o && /^[^#\t ][^:]*: [A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { x = $$0; sc = x; sub(/:.*/, "", sc); sub(/^[^:]*: /, "", x); split(x, X, " "); bad(X[1], "target", f, l); o = 0; next } o && /^define [A-Za-z_]/ { bad($$2, "", f, l); o = 0; next } o && /^[A-Za-z_.][A-Za-z0-9_.]* (::?:?=|=|\+=|\?=|!=)/ { bad($$1, "", f, l); o = 0; next } { o = 0 }'); \
 	[ -z "$$ib_bad" ] || { echo "REFUSING: make's own database (a clean evaluation with these goals) defines what the image block defines from outside the block: $${ib_bad%; }. The block's names are set inside it only."; exit 1; }; \
 	$(require_registry); $(require_images)$(require_dev_deploy); $(require_dev_env_file); $(require_pin_tag); \
 	$(call image_block_each,dev_pin_check,;); \
-	$(if $(filter kustomize,$(DEV_DEPLOY)),$(dev_kustomize),$(call pin_env_tag,$(DEV_ENV_FILE),$(TAG),$(foreach p,$(DEV_PROFILES),--profile $(p)),$(call image_block_each,img_base,)); $(dev_up))
+	$(if $(filter none,$(DEV_DEPLOY)),:,$(if $(filter kustomize,$(DEV_DEPLOY)),$(dev_kustomize),$(call pin_env_tag,$(DEV_ENV_FILE),$(TAG),$(foreach p,$(DEV_PROFILES),--profile $(p)),$(call image_block_each,img_base,)); $(dev_up)))$(ib_unchanged)
 
 # ── Verify: build from source, locally, every run ───────────────────────────────────────────────
 # The test image must carry the SAME app layers production ships, plus the dev group. Two Dockerfile
@@ -1668,7 +1745,7 @@ SMOKE_STATIC_PATH ?=
 # The collector's entry point is app.main, which the default `app/*_main.py` glob does not match.
 SMOKE_ENTRY_MODULES ?= app.main
 
-# luxarch:smoke asset v9 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit smoke`.
+# luxarch:smoke asset v10 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit smoke`.
 # ── Smoke: probe the DEPLOYED stack from outside, after every dev deploy ──────────────────────────
 # Emitted by `luxarch --emit smoke`; paste below the image block. `make test` runs the app in-process
 # against its test stack, so it cannot see the proxy, the server, the production image or an entry
@@ -1814,8 +1891,12 @@ smoke: ## Probe the deployed dev stack: build commit, static asset, forged Host 
 	    *) echo "FAIL  $$c is not running ($$st) $${settle}s after its HEALTHCHECK passed: the deployed process stopped"; fail=1;; esac; fi; \
 	done; fi; \
 	n=0; mods=; \
-	if [ -d "$(SMOKE_SCRIPTS_DIR)" ]; then for f in $$(find "$(SMOKE_SCRIPTS_DIR)" -name '*.py' ! -name '__init__.py' | sort); do \
-	  rel=$$(realpath --relative-to="$(SMOKE_IMPORT_ROOT)" "$$f"); mods="$$mods $$(printf '%s' "$${rel%.py}" | tr / .)"; done; fi; \
+	if [ -d "$(SMOKE_SCRIPTS_DIR)" ]; then root=$$(CDPATH= cd -P -- "$(SMOKE_IMPORT_ROOT)" && pwd -P) || exit 1; \
+	  for f in $$(find "$(SMOKE_SCRIPTS_DIR)" -name '*.py' ! -name '__init__.py' | sort); do \
+	  d=$$(CDPATH= cd -P -- "$$(dirname -- "$$f")" && pwd -P) || exit 1; \
+	  case "$$d/" in "$${root%/}/"*) rel="$${d#"$${root%/}"}/$$(basename "$$f")"; rel=$${rel#/} ;; \
+	    *) echo "REFUSING: $$f is not under SMOKE_IMPORT_ROOT ($(SMOKE_IMPORT_ROOT)), so it has no module name to import"; exit 1 ;; esac; \
+	  mods="$$mods $$(printf '%s' "$${rel%.py}" | tr / .)"; done; fi; \
 	mods=$$(printf '%s\n' $$mods $(SMOKE_ENTRY_MODULES) | sort -u); \
 	if [ -n "$$mods" ]; then \
 	  envf=; [ -n "$(SMOKE_ENV_FILE)" ] && [ -f "$(SMOKE_ENV_FILE)" ] && envf="--env-file=$(SMOKE_ENV_FILE)"; \
@@ -1960,10 +2041,57 @@ poetry-install: ## Verify deps resolve + install cleanly from poetry.lock (docke
 
 ##@ Quality (lint · types · tests · secrets)
 
+# luxarch:guard-run asset v3 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit guard-run`.
+# ── GUARD_RUN: how every guard sees this checkout ───────────────────────────────────────────────────
+# Emitted by `luxarch --emit guard-run`; paste it above the targets that run the guards (`status:`, and
+# `arch:` / `lint:` / `audit:` where they run a guard image).
+#
+# Agents work in linked worktrees (`.claude/worktrees/<ISSUE-KEY>`). A worktree's `.git` is a file
+# pointing into the MAIN checkout's `.git`, and the hooks keep their session state (the heartbeat) in
+# the main checkout's `.claude/`. A guard that mounts only the worktree at /repo can read neither:
+# every rule that reads git or the heartbeat goes INERT there, and `make status` run in a worktree
+# commits those INERT verdicts as the repo's record. So GUARD_RUN also mounts the main checkout,
+# read-only, at its own path, where the worktree's `.git` file points. In the main checkout itself
+# there is nothing more to mount. Not covered: a worktree whose `.git` names its gitdir by a RELATIVE
+# path (`worktree.useRelativePaths`), which resolves from /repo to somewhere else; its git-reading
+# rules stay INERT. Claude Code writes absolute pointers.
+# The main checkout is mounted only from a linked worktree: git's own directory differs from the
+# common one. A plain subdirectory of a checkout is not a worktree and gets no second mount. A
+# worktree of a submodule or of a bare repository has a common directory not named `.git`: that
+# directory itself is mounted. A git hook's GIT_DIR is not this checkout's, so it is ignored here.
+override GUARD_MAIN := $(if $(filter command,$(origin GUARD_MAIN)),$(GUARD_MAIN),$(shell unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR; cd -P -- '$(subst ','\'',$(CURDIR))' 2>/dev/null && g=$$(git rev-parse --path-format=absolute --git-dir 2>/dev/null) && d=$$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && [ "$$g" != "$$d" ] && if [ "$$(basename "$$d")" = .git ]; then dirname "$$d"; else printf '%s\n' "$$d"; fi))
+#
+# Every emitted block mounts `$(CURDIR)` as this checkout, and a relative `-include Makefile.local`
+# is read from it. Under `make -f <path>` started in another directory, `$(CURDIR)` is that other
+# directory: the guards would judge the wrong tree, and Makefile.local would not be read. So a run
+# whose first makefile is not in the directory make runs in is refused; `make -C <dir>` is the way to
+# run it from elsewhere. The makefile is found by joining MAKEFILE_LIST's words until they name a
+# file (a path may hold spaces), and its directory is compared, as a whole string, with the shell's
+# real one and with CURDIR; the longest joining that names a file wins, so a stray file named like
+# the path's first word does not. MAKEFILES (makefiles read first) is refused. A CURDIR given on the
+# top make's command line names the tree deliberately and is honoured; a sub-make, which inherits
+# it, is judged like any run, except under `make -n`, which runs no guard. v3: the dry runs luxarch and
+# luxlint read a makefile with (`make -n`, in a copy of the tree, CURDIR naming the real one, each
+# sub-make at its own MAKELEVEL) were refused at the first sub-make, so a correctly wired repo read
+# red. The block's own variables are set with `override` and never
+# exported, so neither `make -e` nor a parent's bare `export` can hand a sub-make other values.
+# Stated limits, each refused rather than misread: a `-f` path holding two spaces in a row or a tab
+# (MAKEFILE_LIST collapses them: run `make -C`), and a checkout path holding `:` (docker reads it
+# as a mount option). Not refused: under `make -n`, a guard line that make runs anyway (a `+` line,
+# or one naming `$(MAKE)`) in a sub-make that inherited a command-line CURDIR.
+override guard_same = $(and $(findstring |$(1)|,|$(2)|),$(findstring |$(2)|,|$(1)|))
+override guard_dry := $(findstring n,$(filter-out -% %=%,$(firstword $(MAKEFLAGS))))
+$(if $(strip $(MAKEFILES)),$(error REFUSING: MAKEFILES ($(MAKEFILES)) reads other makefiles first, so the guards' tree is not this makefile's: unset it))
+unexport CURDIR GUARD_MAIN GUARD_HERE GUARD_PWD GUARD_RUN guard_same guard_dry
+override GUARD_HERE := $(shell set -- $(foreach w,$(MAKEFILE_LIST),'$(subst ','\'',$(w))'); p=; for w do p="$${p:+$$p }$$w"; if [ -f "$$p" ]; then h=$$(cd -P -- "$$(dirname -- "$$p")" && pwd -P); fi; done; printf '%s\n' "$$h")
+override GUARD_PWD := $(shell pwd -P)
+$(if $(and $(filter command,$(origin CURDIR)),$(or $(filter 0,$(MAKELEVEL)),$(guard_dry))),,$(if $(and $(GUARD_HERE),$(call guard_same,$(GUARD_HERE),$(GUARD_PWD)),$(call guard_same,$(GUARD_HERE),$(CURDIR))),,$(if $(filter environment%,$(origin GUARD_MAIN)),$(error REFUSING: GUARD_MAIN comes from the environment, so the caller chose a tree to mount: unset it))$(error REFUSING: make runs in $(GUARD_PWD) (CURDIR $(CURDIR)), not in this makefile's directory $(or $(GUARD_HERE),(not found)), so every guard would read the wrong tree: run make -C <the makefile's directory>)))
+override GUARD_RUN = docker run --rm -v '$(subst ','\'',$(CURDIR))':/repo $(if $(GUARD_MAIN),$(if $(call guard_same,$(CURDIR),$(GUARD_MAIN)),,-v '$(subst ','\'',$(GUARD_MAIN))':'$(subst ','\'',$(GUARD_MAIN))':ro))
+
 lint: ## luxlint (ruff + the canonical checks, mount-only). Needs LUXLINT_REGISTRY (Makefile.local).
 	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \
 	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping lint"; \
-	else docker run --rm -v $(CURDIR):/repo $(LUXLINT_IMAGE); fi
+	else $(GUARD_RUN) $(LUXLINT_IMAGE); fi
 
 # The type leg is its OWN gate step (repo.makefile_canonical). Since luxlint 0.2x it is
 # mount-only like ruff — the fleet's typed-dependency union is baked into the image, so
@@ -1971,12 +2099,12 @@ lint: ## luxlint (ruff + the canonical checks, mount-only). Needs LUXLINT_REGIST
 mypy: ## mypy via luxlint (fleet stubs baked, mount-only). Needs LUXLINT_REGISTRY.
 	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \
 	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping mypy"; \
-	else docker run --rm -v $(CURDIR):/repo $(LUXLINT_IMAGE) --mypy; fi
+	else $(GUARD_RUN) $(LUXLINT_IMAGE) --mypy; fi
 
 format: ## Apply the CANONICAL fixer in place: ruff check --fix + ruff format + markdown. Needs LUXLINT_REGISTRY.
 	@if [ -z "$(LUXLINT_REGISTRY)" ]; then \
 	  echo "luxlint: LUXLINT_REGISTRY unset (see Makefile.local.example) — skipping format"; \
-	else docker run --rm --user $(REPO_UID):$(REPO_GID) -v $(CURDIR):/repo $(LUXLINT_IMAGE) --format; fi
+	else $(GUARD_RUN) --user $(REPO_UID):$(REPO_GID) $(LUXLINT_IMAGE) --format; fi
 
 # Test-block settings: the suite runs against a REAL InfluxDB (compose service `kidde_influxdb_test`,
 # profile `test`), never a mock (repo.test_stack_parity). .env.e2e is committed and fills the
@@ -1986,7 +2114,7 @@ TEST_SERVICES := kidde_influxdb_test
 TEST_ENV := -e TEST_INFLUXDB_URL=http://kidde_influxdb_test:8086 -e TEST_INFLUXDB_TOKEN=kidde-test-token \
             -e TEST_INFLUXDB_ORG=kidde -e TEST_INFLUXDB_BUCKET=kidde
 
-# luxarch:test-block asset v4 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit test-block`.
+# luxarch:test-block asset v9 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit test-block`.
 # ── Test: THE suite, in the test image, against an isolated stack of real services ───────────────
 # Emitted by `luxarch --emit test-block`; paste below the build core (`luxarch --emit build-core`, v4:
 # it builds with the core's `img_*` helpers and TEST_IMAGE, and the repo's BUILD_ARGS, and quotes every
@@ -2065,6 +2193,47 @@ TEST_ENV := -e TEST_INFLUXDB_URL=http://kidde_influxdb_test:8086 -e TEST_INFLUXD
 #     not exist refuses, naming it; `repo.test_block_wired` reds one git does not track.
 #     Empty (neither file exists), compose gets `--env-file /dev/null`: its implicit `.env` is a
 #     file one checkout has and another does not.
+#   - MIGRATION TESTS run as a second pytest run of the same suite, in the same container, image,
+#     stack and coverage (v5). A migration test builds a database of its own at an older revision
+#     (`CREATE DATABASE` through the server's maintenance database, `alembic upgrade <parent>`, seed,
+#     upgrade) and runs what a migration really runs, `CREATE INDEX CONCURRENTLY` among it: the
+#     test-db-bound block refuses both, by design, so these tests cannot run under it. TEST_MIGRATIONS
+#     names their directory (`tests/migrations`, its last part `migrations`): the main run ignores it
+#     (`--ignore`), and it runs alone with `--confcutdir` set to it, so no conftest above it, the
+#     block's included, is loaded; its own conftest.py builds and drops its databases. A one-off
+#     PYTEST_ARGS narrows the main run only: a path in it would otherwise run outside the block. Coverage
+#     appends both runs, and `make test` fails when either fails. Layout: `luxarch --playbook
+#     test-isolation`, "Migration tests".
+#   - A NARROWED RUN, `make test-fast PYTEST_ARGS='tests/test_orders.py -k refund'` (v6), is `make test`
+#     with the same isolation (its own image tag, compose project, labels and reaping, so concurrent
+#     checkouts and agents never share a stack or an image) and no coverage verdict: the ratchet
+#     judges the whole floor, so a narrowed run would always fail it, and the migration tests' own
+#     run is skipped. Only `make test` judges the floor; the check gate runs it. The recipe reads
+#     the goals make sets from its own command line (MAKECMDGOALS at origin `default`), inline, with
+#     no variable of its own: a makefile, environment, target- or pattern-specific value, or a
+#     MAKEOVERRIDES word handed to a sub-make keeps the ratchet on, and `make test test-fast` runs it.
+#   - THE [shared] OVERLAY (v7). A repo declaring `[shared]` keeps 0-byte placeholders in each app
+#     that the real shared code is mounted over; the suite runs from the read-only `/repo` mount, so
+#     it imports the placeholders unless the overlay is mounted there too. TEST_MOUNTS
+#     (`<suite>_TEST_MOUNTS`) is that overlay: `-v <host path>:<path under /repo/<workdir>>[:ro]`
+#     pairs, which luxlint emits as `$(call shared_overlay,/repo/<workdir>/app)` (`luxlint
+#     --emit-shared-overlay`). The overlaid code is another package's, so it counts in ONE ratchet:
+#     every suite leaves its overlay out of its coverage (`coverage run --omit`), except the suite
+#     holding the shared tests, which sets `<suite>_TEST_OVERLAY_COV := 1` and measures it. Its
+#     mounts land under a package its TEST_COV names (a directory under the workdir, or a package
+#     name such as `mypkg` in a src layout). Coverage walks a package only through directories
+#     holding an `__init__.py`, so every directory from that package down to the mount, and every
+#     directory of the host path that holds code, holds one, and the host path exists. A mount
+#     replaces a PLACEHOLDER only: a 0-byte file, or a package holding an empty `__init__.py` and
+#     no other .py or .pyw, never a symlink. A mount over code with content would hide that code
+#     from the suite's coverage. The run refuses an overlay no suite measures, and one two suites measure
+#     (host paths compared as the files they are). It also refuses a pair outside that shape, a
+#     path holding anything but letters, digits and `._/@+-` or a `..` part (make resolves
+#     `link/..` after the symlink, docker as text), and a placeholder this checkout lacks (docker
+#     cannot make a mount point inside the read-only mount). Both paths are read as docker reads
+#     them: repeated slashes, `.` parts and a trailing slash dropped (luxlint's map writes
+#     `$(SHARED_HOST)/.` when the whole shared directory is the overlay). Make compares the host paths on this machine, so
+#     a DOCKER_HOST on another machine is outside what the run can check.
 #   - Each run's project is named from its own `mktemp -d` token, and refuses to run without one (a
 #     PID repeats across containers and CI runners), and everything mounts the makefile's directory
 #     ($(CURDIR)), so `make -C` runs the right suite.
@@ -2090,7 +2259,8 @@ TEST_FLOOR ?= .luxlint.toml
 # suite, set by the TEST_* settings above. Each name is an image's settings name, as in the image
 # block's IMAGES: its test image is the `test` stage of `<name>_DOCKERFILE` in `<name>_BUILD_CONTEXT`,
 # tagged from `<name>_IMAGE_NAME`. A suite's own settings are `<name>_TEST_SERVICES`, `_TEST_ENV`,
-# `_TEST_WORKDIR`, `_TEST_COV` and `_TEST_FLOOR`; one it leaves unset is the TEST_* value. Every
+# `_TEST_WORKDIR`, `_TEST_COV`, `_TEST_FLOOR`, `_TEST_MIGRATIONS`, `_TEST_MOUNTS` and
+# `_TEST_OVERLAY_COV`; one it leaves unset is the TEST_* value. Every
 # suite has a floor of its own: the run refuses two that name the same file. For example
 #   TEST_SUITES          := backend agent
 #   backend_TEST_WORKDIR := apps/backend
@@ -2099,10 +2269,19 @@ TEST_FLOOR ?= .luxlint.toml
 #   agent_TEST_ENV       :=
 #   agent_TEST_FLOOR     := apps/agent/.luxlint.toml
 TEST_SUITES ?=
-# Setting: NONE. For a one-off run only, on the command line: `make test PYTEST_ARGS='-k orders'`.
+# Setting: the migration tests' directory, from TEST_WORKDIR (`tests/migrations`), run on their own
+# outside the test-db-bound block (v5); empty: none. A listed suite's is `<suite>_TEST_MIGRATIONS` ---
+TEST_MIGRATIONS ?=
+# Setting: the [shared] overlay mounted over the suite's placeholders, `-v <host>:<container>[:ro]`
+# pairs inside /repo/<workdir> (`$(call shared_overlay,/repo/apps/backend/app)`); empty: none -----
+TEST_MOUNTS ?=
+# Setting: 1 on the ONE suite whose ratchet measures the overlay (it holds the shared tests); every
+# other suite leaves its overlay out of its coverage --------------------------------------------
+TEST_OVERLAY_COV ?=
+# Setting: NONE. For a one-off run only, on the command line: `make test-fast PYTEST_ARGS='-k orders'`.
 # A committed value narrows THE suite for everyone (`repo.test_block_wired` reds one). The ratchet
-# still judges the whole floor, so a narrowed run measures only what it touched and fails it: a
-# quick subset target of your own runs pytest without the ratchet, never through `make test` ----
+# judges the whole floor, so a narrowed `make test` measures only what it touched and fails it:
+# `make test-fast` runs the narrowed suite the same isolated way, without the ratchet ------------
 PYTEST_ARGS ?=
 
 # One-off pytest arguments reach the container through the environment, never spliced into a quoted
@@ -2121,6 +2300,15 @@ test_suite_var = $(if $(filter -,$(1)),TEST_$(2),$(if $(filter undefined,$(origi
 test_suite = $($(call test_suite_var,$(1),$(2)))
 test_suite_image = $(if $(filter -,$(1)),$(IMAGE_PRIMARY),$(1))
 test_suite_floors = $(foreach s,$(test_suites),$(or $(realpath $(call test_suite,$(s),FLOOR)),$(abspath $(call test_suite,$(s),FLOOR))))
+# The overlay's host paths a suite mounts (v7), and over every suite those measured (OVERLAY_COV 1)
+# and those left out: each left out must be measured, and by one suite. A NARROWED run (`test-fast`,
+# or TEST_SUITES given on the command line or in the environment) may leave out the suite that
+# measures it, so it is not asked whether the overlay is measured; two suites measuring one overlay
+# is wrong on any run.
+test_suite_mount_srcs = $(sort $(foreach w,$(filter-out -v,$(call test_suite,$(1),MOUNTS)),$(foreach h,$(firstword $(subst :, ,$(w))),$(or $(realpath $(h)),$(abspath $(h))))))
+test_overlay_measured = $(foreach s,$(test_suites),$(if $(filter 1,$(call test_suite,$(s),OVERLAY_COV)),$(call test_suite_mount_srcs,$(s))))
+test_overlay_unmeasured = $(filter-out $(test_overlay_measured),$(foreach s,$(test_suites),$(if $(filter 1,$(call test_suite,$(s),OVERLAY_COV)),,$(call test_suite_mount_srcs,$(s)))))
+test_suites_narrowed = $(or $(filter test-fast,$(MAKECMDGOALS)),$(filter command line environment override,$(origin TEST_SUITES)))
 
 # LEFTOVERS. Every image and container a run makes is labelled `luxarch.test-block=1`, with its run
 # token, its shell's PID and PID namespace, this host's machine id (/etc/machine-id; IOPlatformUUID
@@ -2186,7 +2374,10 @@ test: test-reap ## THE suite (each of TEST_SUITES in turn): its own test image, 
 	printf '%s\n%s\n%s\n%s\n%s\n' "$$$$" "$$ns" "$$co" "$$boot" "$$machine" > "$$D/owner" || { rm -rf "$$D"; exit 2; }; \
 	[ -z $(call sq,$(TEST_ENV_FILE)) ] || [ -f $(call sq,$(TEST_ENV_FILE)) ] || { printf 'REFUSING: TEST_ENV_FILE is %s, which this checkout does not have: compose would fail on interpolation. Commit it (test-suite.env), or set TEST_ENV_FILE to a committed file\n' $(call sq,$(TEST_ENV_FILE)); rm -rf "$$D"; exit 2; }; \
 	[ $(words $(test_suite_floors)) = $(words $(sort $(test_suite_floors))) ] || { printf 'REFUSING: two suites would share one coverage floor (%s): give each its own <suite>_TEST_FLOOR\n' $(call sq,$(foreach s,$(test_suites),$(s)=$(call test_suite,$(s),FLOOR))); rm -rf "$$D"; exit 2; }; \
-	stop="$$D/stop"; kid=; insuite=; \
+	[ -z $(call sq,$(findstring %,$(foreach s,$(test_suites),$(call test_suite,$(s),MOUNTS)))) ] || { echo 'REFUSING: a TEST_MOUNTS path holds %, which make reads as a pattern: each path is letters, digits and ._/@+-'; rm -rf "$$D"; exit 2; }; \
+	[ -n $(call sq,$(strip $(test_suites_narrowed))) ] || [ -z $(call sq,$(strip $(test_overlay_unmeasured))) ] || { printf 'REFUSING: no suite measures the overlay %s, and every suite mounting it leaves it out of its coverage: set <suite>_TEST_OVERLAY_COV := 1 on the suite holding its tests\n' $(call sq,$(strip $(test_overlay_unmeasured))); rm -rf "$$D"; exit 2; }; \
+	[ $(words $(test_overlay_measured)) = $(words $(sort $(test_overlay_measured))) ] || { printf 'REFUSING: two suites measure one overlay (%s): it counts in one ratchet, so set <suite>_TEST_OVERLAY_COV := 1 on one suite only\n' $(call sq,$(strip $(test_overlay_measured))); rm -rf "$$D"; exit 2; }; \
+	stop="$$D/stop"; kid=; insuite=; fast=$(if $(filter default,$(origin MAKECMDGOALS)),$(if $(filter test,$(MAKECMDGOALS)),,$(if $(filter test-fast,$(MAKECMDGOALS)),1))); \
 	kids() { p=$$1; if command -v pgrep >/dev/null 2>&1; then pgrep -P "$$p"; else set +f; for f in /proc/[0-9]*/stat; do read -r l < "$$f" 2>/dev/null || continue; set -- $${l##*)}; [ "$${2:-}" = "$$p" ] && { c=$${f#/proc/}; echo "$${c%/stat}"; }; done; set -f; fi; }; \
 	tree() { for c in $$(kids "$$1"); do tree "$$c"; done; kill -TERM "$$1" 2>/dev/null; }; \
 	trap 'rm -rf "$$D"' EXIT; \
@@ -2207,6 +2398,31 @@ test: test-reap ## THE suite (each of TEST_SUITES in turn): its own test image, 
 	  trap 'ok=; for t in 1 2 3; do dc down --volumes --remove-orphans >/dev/null 2>&1; [ -z "$$(docker network ls -q --filter "label=com.docker.compose.project=$$p"; docker volume ls -q --filter "label=com.docker.compose.project=$$p")" ] && { ok=1; break; }; done; if [ -n "$$ok" ]; then docker rmi -f "$$img" >/dev/null 2>&1; else printf "FAIL  the test stack %s did not come down (its networks or volumes remain): make test-reap removes it once they are free\n" "$$p"; exit 1; fi' EXIT; \
 	  trap '[ -z "$$kid" ] || tree "$$kid"' TERM; \
 	  mkdir "$$out" && chmod 733 "$$out" || exit 2; \
+	  mig=$(call sq,$(call test_suite,$(s),MIGRATIONS)); mig=$${mig%/}; \
+	  if [ -n "$$mig" ]; then case "/$$mig/" in (//*|*/../*|*/./*) mig=;; esac; case "$$mig" in (migrations|*/migrations) ;; (*) mig=;; esac; \
+	    [ -n "$$mig" ] && [ -d $(call sq,$(CURDIR)/$(call test_suite,$(s),WORKDIR))/"$$mig" ] \
+	      || { printf 'REFUSING: %s is %s: name the directory of the migration tests under %s, its last part migrations (tests/migrations)\n' $(call sq,$(call test_suite_var,$(s),MIGRATIONS)) $(call sq,$(call test_suite,$(s),MIGRATIONS)) $(call sq,$(call test_suite,$(s),WORKDIR)); exit 2; }; fi; \
+	  wd=$$(printf '%s\n' /repo/$(call sq,$(call test_suite,$(s),WORKDIR)) | sed -e 's#//*#/#g' -e ':a' -e 's#/\./#/#' -e 'ta' -e 's#/\.$$##' -e 's#/$$##'); own=$(call sq,$(filter 1,$(call test_suite,$(s),OVERLAY_COV))); mnt=; omit=; set -- $(call sqw,$(call test_suite,$(s),MOUNTS)); \
+	  while [ $$# -gt 0 ]; do \
+	    m=$${2:-}; src=$${m%%:*}; dst=$${m#*:}; opt=$${dst#*:}; [ "$$opt" != "$$dst" ] || opt=; dst=$${dst%%:*}; \
+	    src=$$(printf '%s\n' "$$src" | sed -e 's#//*#/#g' -e ':a' -e 's#/\./#/#' -e 'ta' -e 's#/\.$$##' -e 's#\(.\)/$$#\1#'); \
+	    dst=$$(printf '%s\n' "$$dst" | sed -e 's#//*#/#g' -e ':b' -e 's#/\./#/#' -e 'tb' -e 's#/\.$$##' -e 's#\(.\)/$$#\1#'); bad=; \
+	    [ "$$1" = -v ] || bad=1; case "$$opt" in (''|ro) ;; (*) bad=1;; esac; case "$$src$$dst" in (*[!A-Za-z0-9._/@+-]*) bad=1;; esac; \
+	    case "$$src" in (/*) ;; (*) bad=1;; esac; case "$$dst/" in ("$$wd"/?*/) ;; (*) bad=1;; esac; case "/$$src/ /$$dst/" in (*/../*) bad=1;; esac; \
+	    [ -z "$$bad" ] || { printf 'REFUSING: %s takes -v <host path>:<path under %s>[:ro] pairs, each path of letters, digits and ._/@+- (the [shared] overlay: $$(call shared_overlay,%s/app)); %s %s is not one\n' $(call sq,$(call test_suite_var,$(s),MOUNTS)) "$$wd" "$$wd" "$$1" "$$m"; exit 2; }; \
+	    ph=$(call sq,$(CURDIR))/"$${dst#/repo/}"; \
+	    [ -e "$$ph" ] || [ -L "$$ph" ] || { printf 'REFUSING: %s mounts over %s, which this checkout does not have: docker cannot make a mount point inside the read-only /repo. Commit the placeholder (a directory: an empty __init__.py in it, as git keeps no empty directory)\n' $(call sq,$(call test_suite_var,$(s),MOUNTS)) "$${dst#/repo/}"; exit 2; }; \
+	    if [ ! -L "$$ph" ] && { { [ -f "$$ph" ] && [ ! -s "$$ph" ]; } || { [ -d "$$ph" ] && [ -f "$$ph/__init__.py" ] && [ -z "$$(find "$$ph" \( -name '*.py' -o -name '*.pyw' \) ! \( -name __init__.py -size 0 \) | head -n 1)" ]; }; }; then :; else \
+	      printf 'REFUSING: %s mounts over %s, which is not a placeholder: the overlay replaces a 0-byte file, or a package holding an empty __init__.py and no other .py or .pyw, never code of the suite'"'"'s own\n' $(call sq,$(call test_suite_var,$(s),MOUNTS)) "$${dst#/repo/}"; exit 2; fi; \
+	    if [ -n "$$own" ]; then root=; for c in $$(printf '%s' $(call sq,$(call test_suite,$(s),COV)) | tr ',' ' '); do c=$${c#./}; c=$${c%/}; [ "$$c" != . ] || c=; \
+	      if [ -z "$$c" ] || [ -d $(call sq,$(CURDIR))$${wd#/repo}/"$$c" ]; then case "$$dst/" in ("$$wd$${c:+/$$c}"/*) root=$$wd$${c:+/$$c};; esac; \
+	      else cp=$$(printf '%s' "$$c" | tr . /); case "$$dst/" in (*/"$$cp"/*) d2=$$dst/; root=$${d2%%/"$$cp"/*}/$$cp;; esac; fi; done; \
+	    [ -n "$$root" ] || { printf 'REFUSING: %s measures its overlay, so each mount lands under a package it measures (%s); %s does not\n' $(call sq,$(call test_suite_var,$(s),OVERLAY_COV)) $(call sq,$(call test_suite,$(s),COV)) "$$dst"; exit 2; }; \
+	    [ -e "$$src" ] || { printf 'REFUSING: %s measures the overlay %s, which does not exist\n' $(call sq,$(call test_suite_var,$(s),OVERLAY_COV)) "$$src"; exit 2; }; \
+	    rel=$${dst#"$$root"/}; q=$$root; last=; nopkg=; for x in $$(printf '%s' "$$rel" | tr '/' ' '); do [ -z "$$last" ] || { q=$$q/$$last; [ -f $(call sq,$(CURDIR))/"$${q#/repo/}"/__init__.py ] || nopkg="$$nopkg $${q#/repo/}"; }; last=$$x; done; \
+	    [ ! -d "$$src" ] || nopkg="$$nopkg$$(find "$$src" -type d ! -name __pycache__ | while read -r d; do [ -f "$$d/__init__.py" ] || [ -z "$$(find "$$d" \( -name '*.py' -o -name '*.pyw' \) | head -n 1)" ] || printf ' %s' "$$d"; done)"; \
+	    [ -z "$$nopkg" ] || { printf 'REFUSING: %s measures its overlay, and coverage walks a package only through directories holding an __init__.py, so it would never report the code under%s: give each one an __init__.py\n' $(call sq,$(call test_suite_var,$(s),OVERLAY_COV)) "$$nopkg"; exit 2; }; fi; \
+	    mnt="$$mnt -v $$src:$$dst$${opt:+:$$opt}"; [ -n "$$own" ] || omit="$$omit,$$dst,$$dst/*"; shift 2; done; omit=$${omit#,}; \
 	  $(if $(filter -,$(s)),,printf '── suite %s (%s)\n' $(call sq,$(s)) $(call sq,$(call test_suite,$(s),WORKDIR));) \
 	  bg docker build --load --target test $$lab --label "luxarch.test-block.checkout=$$co" --label "luxarch.test-block.project=$$p" $(call sqw,$(BUILD_ARGS)) -f $(call sq,$(call img_dockerfile,$(call test_suite_image,$(s)))) -t "$$img" $(call sq,$(call img_context,$(call test_suite_image,$(s)))) >/dev/null \
 	    || { printf 'FAIL  the test image did not build: the test stage of %s\n' $(call sq,$(call img_dockerfile,$(call test_suite_image,$(s)))); exit 1; }; \
@@ -2218,12 +2434,13 @@ test: test-reap ## THE suite (each of TEST_SUITES in turn): its own test image, 
 	      [ "$$(docker network inspect -f '{{index .Labels "com.docker.compose.project"}}' $$n)" = "$$p" ] && { net=$$n; break; }; done; \
 	    [ -n "$$net" ] || { printf 'FAIL  %s joined no network of this run'"'"'s own project (%s)\n' $(call sq,$(firstword $(call test_suite,$(s),SERVICES))) "$$p"; exit 1; }; \
 	    net="--network $$net"; fi; \
-	  bg docker run --rm --init $$lab --label "luxarch.test-block.checkout=$$co" -e TINI_KILL_PROCESS_GROUP=1 $$net $(call sqw,$(call test_suite,$(s),ENV)) -e PYTEST_ADDOPTS="$${PYTEST_ARGS:-}" \
-	    -e LUXARCH_TEST_COV=$(call sq,$(call test_suite,$(s),COV)) -e COVERAGE_CORE=sysmon -e COVERAGE_FILE=/out/.coverage -e PYTHONDONTWRITEBYTECODE=1 \
-	    -v $(call sq,$(CURDIR)):/repo:ro -v "$$D/cfg":/cfg:ro -v "$$out":/out -w /repo/$(call sq,$(call test_suite,$(s),WORKDIR)) "$$img" \
-	    sh -c 'python -m coverage run --branch --source="$$LUXARCH_TEST_COV" -m pytest -c /cfg/pytest.ini --rootdir=. -p no:cacheprovider; s=$$?; python -m coverage report --show-missing --precision=2 > /out/coverage.txt; echo $$? > /out/coverage.rc; python -m coverage json -q -o - > /out/coverage.json; cat /out/coverage.txt; exit $$s'; \
+	  bg docker run --rm --init $$lab --label "luxarch.test-block.checkout=$$co" -e TINI_KILL_PROCESS_GROUP=1 $$net $(call sqw,$(call test_suite,$(s),ENV)) -e PYTEST_ADDOPTS="$${PYTEST_ARGS:-}" -e LUXARCH_TEST_MIGRATIONS="$$mig" -e LUXARCH_TEST_FAST="$$fast" \
+	    -e LUXARCH_TEST_COV=$(call sq,$(call test_suite,$(s),COV)) -e LUXARCH_TEST_OMIT="$$omit" -e COVERAGE_CORE=sysmon -e COVERAGE_FILE=/out/.coverage -e PYTHONDONTWRITEBYTECODE=1 \
+	    -v $(call sq,$(CURDIR)):/repo:ro $$mnt -v "$$D/cfg":/cfg:ro -v "$$out":/out -w /repo/$(call sq,$(call test_suite,$(s),WORKDIR)) "$$img" \
+	    sh -c 'm=$${LUXARCH_TEST_MIGRATIONS:-}; o=$${LUXARCH_TEST_OMIT:-}; python -m coverage run --branch --source="$$LUXARCH_TEST_COV" $${o:+"--omit=$$o"} -m pytest -c /cfg/pytest.ini --rootdir=. -p no:cacheprovider $${m:+"--ignore=$$m"}; s=$$?; if [ -n "$$m" ] && [ -z "$${LUXARCH_TEST_FAST:-}" ]; then PYTEST_ADDOPTS= python -m coverage run --append --branch --source="$$LUXARCH_TEST_COV" $${o:+"--omit=$$o"} -m pytest -c /cfg/pytest.ini --rootdir=. -p no:cacheprovider --confcutdir="$$m" "$$m"; ms=$$?; [ "$$ms" = 0 ] || echo "FAIL  the migration tests in $$m failed (exit $$ms)"; [ "$$s" != 0 ] || s=$$ms; fi; python -m coverage report --show-missing --precision=2 > /out/coverage.txt; echo $$? > /out/coverage.rc; python -m coverage json -q -o - > /out/coverage.json; cat /out/coverage.txt; exit $$s'; \
 	  rc=$$?; \
 	  [ "$$rc" = 0 ] || { echo "FAIL  the suite failed (exit $$rc)"; exit 1; }; \
+	  [ -z "$$fast" ] || { echo "test-fast: passed, with no coverage verdict and no migration tests (make test runs both)"; exit 0; }; \
 	  [ "$$(cat "$$out/coverage.rc" 2>/dev/null)" = 0 ] || { printf 'FAIL  coverage measured nothing (coverage report: %s): check %s names the package the suite imports\n' "$$(tail -n 1 "$$out/coverage.txt" 2>/dev/null)" $(call sq,$(call test_suite_var,$(s),COV)); exit 1; }; \
 	  [ -f $(call sq,$(abspath $(call test_suite,$(s),FLOOR))) ] || { printf 'FAIL  the coverage floor %s (%s) does not exist: put [test].coverage_min there\n' $(call sq,$(call test_suite,$(s),FLOOR)) $(call sq,$(call test_suite_var,$(s),FLOOR)); exit 1; }; \
 	  cat "$$out/coverage.txt" "$$out/coverage.json" > "$$out/ratchet.in" 2>/dev/null; \
@@ -2234,15 +2451,19 @@ test: test-reap ## THE suite (each of TEST_SUITES in turn): its own test image, 
 	) & kid=$$!; while wait "$$kid"; r=$$?; kill -0 "$$kid" 2>/dev/null; do :; done; kid=; insuite=; halt; [ "$$r" = 0 ] || failed="$$failed "$(call sq,$(s)); ) \
 	[ -z "$$failed" ] || { $(if $(strip $(TEST_SUITES)),echo "FAIL  suites that failed:$$failed";) exit 1; }
 
+# THE NARROWED RUN (v6): `make test` with the same isolation and no coverage verdict. The recipe is
+# `test`'s own: it reads this goal from make's command line.
+test-fast: test ## One-off narrowed run, isolated like `make test`, no coverage verdict: make test-fast PYTEST_ARGS='tests/test_x.py -k y'
+
 arch: ## Architecture conformance via luxarch (pinned; reads .luxarch.toml). Needs LUXARCH_REGISTRY (Makefile.local).
 	@if [ -z "$(LUXARCH_REGISTRY)" ]; then \
 	  echo "luxarch: LUXARCH_REGISTRY unset (see Makefile.local.example) — skipping arch"; \
-	else docker run --rm -v $(CURDIR):/repo $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION); fi
+	else $(GUARD_RUN) $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION); fi
 
 audit: ## Dependency-vuln scan via luxaudit (pinned; poetry.lock vs live OSV+PyPA feed). Needs LUXAUDIT_REGISTRY (Makefile.local).
 	@if [ -z "$(LUXAUDIT_REGISTRY)" ]; then \
 	  $(if $(filter $(PUBLISH_GOALS),$(MAKECMDGOALS)),echo "REFUSING: LUXAUDIT_REGISTRY unset (see Makefile.local.example) so the lock audit that gates a publish cannot run"; exit 1,echo "luxaudit: LUXAUDIT_REGISTRY unset (see Makefile.local.example) — skipping audit"); \
-	else docker run --rm -v $(CURDIR):/repo $(LUXAUDIT_IMAGE); fi
+	else $(GUARD_RUN) $(LUXAUDIT_IMAGE); fi
 
 test-e2e: build-local harness-build ## Hardware-free end-to-end test: fake Kidde endpoint -> collector -> InfluxDB
 	./scripts/e2e-test.sh
@@ -2263,19 +2484,17 @@ guard-version-check: ## FATAL: fail the gate if any fleet guard pin is behind th
 	  else printf "✓ %-9s %s (latest)\n" "$$name" "$$pin"; fi; \
 	done; exit $$rc
 
-# luxarch:guard-upgrade asset v3 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit guard-upgrade`.
-# v2: the preview mounts `$(CURDIR)`, this makefile's directory (it edits ./Makefile there). v1 mounted
-# `$(PWD)`, the caller's directory, so `make -C <repo> guard-upgrade` previewed ANOTHER repo's new reds.
-# v3: it runs on macOS and on a machine with no registry. v2 rewrote the pin with `sed -i -E`, which
-# BSD sed reads as `-i` with the backup suffix `-E`: it failed, safely, and never bumped a pin on a Mac.
-# The rewrite is now `sed` into a temporary file beside the Makefile (its mode copied first), renamed
-# over it (`mv`, one atomic step: a failed write leaves the Makefile as it was), then read back.
-# With REGISTRY empty (guards loaded from the release tarball), v2 read `latest` only from
-# `$(REGISTRY)/…:latest` and always exited 1. Latest is now the highest released `<guard>:X.Y.Z` on
-# this machine (a guard's `make build-local` tags one only when its source IS that release), never
-# `:local`, which the fleet never runs.
+# luxarch:guard-upgrade asset v4 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit guard-upgrade`.
+# Bumps each guard pin to its latest release and prints the rules the new luxarch adds (`--new-rules`).
+# The preview mounts `$(CURDIR)`, this makefile's directory, whatever directory `make -C` ran from.
+# Latest is the registry's `:latest`, or with REGISTRY empty (guards loaded from the release tarball)
+# the highest released `<guard>:X.Y.Z` on this machine, never `:local`. The pin is rewritten with `sed`
+# into a temporary file beside the Makefile (its mode copied first), renamed over it (`mv`, one atomic
+# step: a failed write leaves the Makefile as it was), then read back: the same on macOS and Linux.
+# A guard whose latest cannot be read is named and fails the run: "all pins already at latest" is
+# printed only when every guard was read.
 guard-upgrade:  ## Bump every guard pin to the published latest (prints what newly bites)
-	@for g in luxarch luxlint luxaudit; do \
+	@unread=; checked=; bumped=; for g in luxarch luxlint luxaudit; do \
 	  if [ -n "$(REGISTRY)" ]; then \
 	    img=$(REGISTRY)/luxardolabs/$$g; src="$$img:latest"; \
 	    docker pull -q $$img:latest >/dev/null 2>&1 || true; \
@@ -2286,8 +2505,8 @@ guard-upgrade:  ## Bump every guard pin to the published latest (prints what new
 	  fi; \
 	  var=$$(echo $$g | tr a-z A-Z)_VERSION; \
 	  old=$$(sed -n -E "s/^$$var[[:space:]]*:=[[:space:]]*//p" Makefile); \
-	  if [ -z "$$old" ]; then echo "!! no $$var pin found in Makefile — NOT bumped"; continue; fi; \
-	  if [ -z "$$latest" ]; then echo "!! could not read $$src — $$var left at $$old"; continue; fi; \
+	  if [ -z "$$old" ]; then echo "!! no $$var pin found in Makefile — NOT bumped"; unread="$$unread $$g"; continue; fi; \
+	  if [ -z "$$latest" ]; then echo "!! could not read $$src — $$var left at $$old"; unread="$$unread $$g"; continue; fi; \
 	  checked=1; \
 	  tmp=$$(mktemp ./.guard-upgrade.XXXXXX) && cp -p Makefile "$$tmp" && sed -E "s|^($$var[[:space:]]*:=[[:space:]]*).*|\\1$$latest|" Makefile > "$$tmp" && mv -f "$$tmp" Makefile; rc=$$?; \
 	  if [ "$$rc" != 0 ]; then rm -f "$$tmp"; echo "!! could not rewrite Makefile (it is unchanged) — $$var NOT bumped"; exit 1; fi; \
@@ -2296,9 +2515,10 @@ guard-upgrade:  ## Bump every guard pin to the published latest (prints what new
 	  if [ "$$old" != "$$latest" ]; then echo "$$var $$old -> $$latest"; bumped=1; fi; \
 	  [ "$$g" = luxarch ] && [ "$$old" != "$$latest" ] && docker run --rm -v "$(CURDIR)":/repo $$img:$$latest --new-rules --since $$old || true; \
 	done; \
-	if [ -n "$$bumped" ]; then echo "pins bumped — re-run make check"; \
-	elif [ -n "$$checked" ]; then echo "all pins already at latest"; \
-	else echo "!! could not read any guard's latest (the registry, or with REGISTRY empty this machine's released images) — NO pin was checked; currency NOT established"; exit 1; fi
+	if [ -n "$$bumped" ]; then echo "pins bumped — re-run make check"; fi; \
+	if [ -z "$$checked" ]; then echo "!! could not read any guard's latest (the registry, or with REGISTRY empty this machine's released images) — NO pin was checked; currency NOT established"; exit 1; fi; \
+	if [ -n "$$unread" ]; then echo "!! NOT checked:$$unread (no pin, or its latest could not be read) — currency NOT established"; exit 1; fi; \
+	if [ -z "$$bumped" ]; then echo "all pins already at latest"; fi
 
 # HONESTY gate: a green `make check` must mean nothing was silently unchecked.
 #   luxarch --assert-scans : FAIL iff a rule family scanned ZERO files (a hollow green) — NOT on reds
@@ -2306,14 +2526,14 @@ guard-upgrade:  ## Bump every guard pin to the published latest (prints what new
 honest: ## Honesty gate — fail if a guard family scanned nothing or the type leg is dishonest
 	@if [ -z "$(LUXARCH_REGISTRY)" ] || [ -z "$(LUXLINT_REGISTRY)" ]; then \
 	  echo "honest: guard registry unset (Makefile.local) — skipping"; exit 0; fi
-	@docker run --rm -v $(CURDIR):/repo $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION) --assert-scans
-	@docker run --rm -v $(CURDIR):/repo $(LUXLINT_IMAGE) --preflight
+	@$(GUARD_RUN) $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION) --assert-scans
+	@$(GUARD_RUN) $(LUXLINT_IMAGE) --preflight
 
 # THE fleet gate — byte-identical composition across every repo (repo.makefile_canonical).
 # Order: pin drift -> honesty -> ruff -> types -> tests -> architecture -> dep CVEs -> secrets.
 # It is a GATE, not a report: Make stops at the first failing step. For the full red board at
 # once, run `make plan` (luxarch --plan) — reds phase-ordered and clustered by file.
-# luxarch:check-gate asset v1 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit check-gate`.
+# luxarch:check-gate asset v2 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit check-gate`.
 # ── The fleet gate: every leg runs, then the gate fails naming each red leg ───────────────────────
 # Emitted by `luxarch --emit check-gate`; it replaces a hand-written `check:` line. A gate written as a
 # prerequisite list (`check: … lint mypy test arch …`) stops at the FIRST failing leg: one ruff finding
@@ -2326,25 +2546,48 @@ honest: ## Honesty gate — fail if a guard family scanned nothing or the type l
 # each one. `repo.makefile_canonical` credits CHECK_LEGS only when this recipe is the asset's own, so
 # a hand-written loop that drops an exit code earns nothing.
 #
-# Under `make -i` nothing can fail, the gate's own exit included (make ignores it), so the recipe runs
-# no leg and says why, rather than print a ✓ over legs whose failures were thrown away.
+# The recipe refuses, as make expands it, every way found for a caller to end the gate in a pass over
+# a red leg. An expansion `$(error)` stops make even under `make -i` (which throws away every exit
+# status, the gate's own included), and it is reached wherever `check` runs in this make, as a goal or
+# as a prerequisite. A parent recipe that runs `$(MAKE) check` under its own `-i` still discards it.
+#   - make's flags `-i` (errors ignored), `-t` (legs touched, not run) and `-e` (the environment
+#     overrides the makefile's tool settings), in any spelling: MAKEFLAGS, GNUMAKEFLAGS, `+=`;
+#   - `--eval`, `-I` (it can supply an included file such as Makefile.local) and MAKEFILES: each adds
+#     makefile text from outside to this make and every leg, so the caller would choose what the
+#     legs run, or which legs count;
+#   - CHECK_LEGS, MAKE, MAKE_COMMAND, SHELL or .SHELLFLAGS from the environment or the command line,
+#     and an empty CHECK_LEGS.
+# A variable given on the command line never reaches a leg: `check` empties MAKEOVERRIDES for its
+# sub-makes and unsets each such variable in the shell that starts them (make exports it there
+# too; never PATH or a name the shell owns, like PPID or OPTIND), so each leg runs with the makefile's
+# settings and `make release ALLOW_RETAG=1` still runs
+# the gate. It does reach `check`'s two prerequisites, which run in this make. MAKEFLAGS or
+# GNUMAKEFLAGS given as a command-line variable is refused, and MAKE and SHELL are checked as the
+# recipe runs: make's own MAKE, and a POSIX shell.
+# Under `make -n` the legs dry-run (each sub-make prints its commands) and the gate exits 1 with no
+# verdict: nothing ran, so nothing passed. Stated limits: a second makefile given with `-f` is part
+# of the makefile as far as make can tell, and a variable a leg runs that the makefile sets with `?=`
+# or never sets (an image, a tool, its arguments) takes a value from the environment; the gate can
+# tell neither from your own.
 
-# Setting: the legs, in order. An app repo's are exactly these; a repo with more legs (a guard's own
-# parity suite) appends them. Removing one reds repo.makefile_canonical --------------------------------
+# Setting: the legs, in order, set in the makefile. An app repo's are exactly these; a repo with more
+# legs (a guard's own parity suite) appends them. Removing one reds repo.makefile_canonical ----------
 CHECK_LEGS ?= lint mypy test test-release-gates arch audit gitleaks
 
+check: override MAKEOVERRIDES :=
 check: guard-version-check honest ## THE fleet gate: runs every leg, then fails naming each red one
-	@case '$(filter-out -%,$(firstword $(MAKEFLAGS)))' in *i*) echo "REFUSING: make -i ignores every failure, so this gate cannot fail: run make check without -i"; exit 2;; esac; \
+	@$(foreach v,MAKEFLAGS GNUMAKEFLAGS,$(if $(filter command,$(origin $(v))),$(error REFUSING: $(v) is given as a command-line variable, so every leg would inherit flags this gate never saw: pass make's flags as flags)))$(if $(filter-out default,$(origin MAKE_COMMAND)),$(error REFUSING: MAKE_COMMAND is set by the $(origin MAKE_COMMAND), so a leg would not be make))$(if $(filter-out override,$(origin MAKEOVERRIDES)),$(error REFUSING: check's own `override MAKEOVERRIDES :=` is missing or changed, so a command-line variable would reach the legs: re-emit the gate))$(if $(subst $$(MAKE_COMMAND),,$(value MAKE)),$(error REFUSING: MAKE is $(value MAKE), not make's own $$(MAKE_COMMAND), so a leg would not be make))$(if $(and $(filter 1,$(words $(SHELL))),$(filter /bin/sh /usr/bin/sh /bin/bash /usr/bin/bash /bin/dash /usr/bin/dash /bin/zsh /usr/bin/zsh,$(SHELL))),,$(error REFUSING: SHELL is $(SHELL), not a POSIX shell that returns each leg's status))$(if $(or $(findstring i,$(filter-out -%,$(firstword $(MAKEFLAGS)))),$(findstring t,$(filter-out -%,$(firstword $(MAKEFLAGS)))),$(findstring e,$(filter-out -%,$(firstword $(MAKEFLAGS))))),$(error REFUSING: make -i ignores every failure, -t touches the legs instead of running them, and -e lets the environment override the makefile's tools (flags: $(filter-out -%,$(firstword $(MAKEFLAGS)))), so a red leg could pass: run make check without them))$(if $(findstring n,$(filter-out -%,$(firstword $(MAKEFLAGS)))),,$(if $(filter -I% --include-dir%,$(MAKEFLAGS)),$(error REFUSING: -I lets an included file (Makefile.local) come from another directory, into every leg: run make check without it))$(if $(filter --eval=%,$(MAKEFLAGS)),$(error REFUSING: --eval adds makefile text from the command line to every leg: put it in the makefile))$(if $(strip $(MAKEFILES)),$(error REFUSING: MAKEFILES ($(MAKEFILES)) reads other makefiles into every leg: unset it))$(foreach v,CHECK_LEGS MAKE MAKE_COMMAND SHELL .SHELLFLAGS,$(if $(filter environment% command,$(origin $(v))),$(error REFUSING: $(v) comes from the $(origin $(v)), so the caller chose how the legs run: set it in the makefile))))$(if $(strip $(CHECK_LEGS)),,$(error REFUSING: CHECK_LEGS is empty, so no leg would run))$(foreach v,$(filter-out PATH PPID SHELLOPTS BASHOPTS OPTIND UID EUID BASH_VERSINFO,$(.VARIABLES)),$(if $(filter command,$(origin $(v))),case '$(subst ','\'',$(v))' in ([0-9]*|*[!A-Za-z0-9_]*) ;; (*) unset '$(subst ','\'',$(v))';; esac; )) \
 	failed=; for leg in $(CHECK_LEGS); do \
 	  printf '\n── make %s\n' "$$leg"; \
 	  $(MAKE) --no-print-directory "$$leg" || failed="$$failed $$leg"; \
 	done; \
 	if [ -n "$$failed" ]; then printf '\n✗ make check FAILED:%s (every leg ran; each one is above)\n' "$$failed"; exit 1; fi; \
+	case '$(filter-out -%,$(firstword $(MAKEFLAGS)))' in *n*) printf '\nmake -n: the legs above were printed, not run, so make check gives no verdict\n'; exit 1;; esac; \
 	printf '\n✓ make check: every leg passed (%s)\n' '$(CHECK_LEGS)'
 
 plan: ## The full luxarch red board at once — phase-ordered, clustered by file (the worklist)
 	@if [ -z "$(LUXARCH_REGISTRY)" ]; then echo "luxarch: LUXARCH_REGISTRY unset — skipping"; exit 0; fi; \
-	docker run --rm -v $(CURDIR):/repo $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION) --plan
+	$(GUARD_RUN) $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION) --plan
 
 # Committed guard-status files: the fleet READS these instead of re-running every guard on
 # every repo (luxarch --doc FLEET-STATUS). They are guard-generated lockfiles, never
@@ -2362,15 +2605,15 @@ status: ## Regenerate the committed guard-status files (.lux*-status.json) — t
 	  echo "status: guard registry unset (Makefile.local) — skipping"; exit 0; fi
 	@set -e; export SHA=$$(git rev-parse HEAD) TS=$$(date -u +%FT%TZ); \
 	J=$$(mktemp); trap 'rm -f "$$J"' EXIT INT TERM; \
-	docker run --rm -v $(CURDIR):/repo $(LUXLINT_IMAGE) --json > "$$J" || true; $(STAMP) "$$J" .luxlint-status.json luxlint; \
-	docker run --rm -v $(CURDIR):/repo -e LUXARCH_STATUS_WRITE=1 $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION) --json > "$$J" || true; $(STAMP) "$$J" .luxarch-status.json luxarch; \
-	docker run --rm -v $(CURDIR):/repo $(LUXAUDIT_IMAGE) --json > "$$J" || true; $(STAMP) "$$J" .luxaudit-status.json luxaudit; \
+	$(GUARD_RUN) $(LUXLINT_IMAGE) --json > "$$J" || true; $(STAMP) "$$J" .luxlint-status.json luxlint; \
+	$(GUARD_RUN) -e LUXARCH_STATUS_WRITE=1 $(LUXARCH_REGISTRY)/luxardolabs/luxarch:$(LUXARCH_VERSION) --json > "$$J" || true; $(STAMP) "$$J" .luxarch-status.json luxarch; \
+	$(GUARD_RUN) $(LUXAUDIT_IMAGE) --json > "$$J" || true; $(STAMP) "$$J" .luxaudit-status.json luxaudit; \
 	echo "wrote .lux*-status.json at $$SHA — commit them"
 
 # The asset reads the luxlint image as $(LUXLINT); the gitleaks mirror lives beside it.
 LUXLINT = $(LUXLINT_IMAGE)
 
-# luxarch:gitleaks asset v17 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit gitleaks`.
+# luxarch:gitleaks asset v19 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit gitleaks`.
 # ── The privacy gate: EVERY surface a commit publishes ──────────────────────────────────────────
 # Emitted by `luxarch --emit gitleaks`. Drop in verbatim.
 #
@@ -2386,6 +2629,12 @@ LUXLINT = $(LUXLINT_IMAGE)
 # scan and the push hook: seven commits in one public repo, found only when a file repeated the name.
 # Every commit and annotated-tag message in history is now scanned with the same config as file
 # content, and `gitleaks-commit-msg` scans the message being written (run by hooks/commit-msg).
+
+# The fleet's makefiles need GNU make 4 or later. macOS ships GNU make 3.81, which cannot read this
+# block (nor some others) and would stop every target with a parse error. make reads lines in order,
+# so this refusal comes first and says what to do: `brew install make`, then run `gmake` (or put
+# "$(brew --prefix)/opt/make/libexec/gnubin" first on PATH, so `make` is GNU make 4).
+$(if $(filter 3.%,$(MAKE_VERSION)),$(error REFUSING: GNU make $(MAKE_VERSION) is too old for this Makefile; it needs GNU make 4 or later. On macOS: brew install make; then run gmake))
 
 # Commit identities this repo accepts. The fleet account's `users.noreply.github.com` address, plus
 # GitHub's own web-UI committer. Widen ONLY for a real outside contributor, with a comment saying who.
@@ -2406,7 +2655,12 @@ LUXLINT = $(LUXLINT_IMAGE)
 # v12: the fleet ACCOUNT, not any noreply address. v11 accepted `<anyone@users.noreply.github.com>`, so a
 # stranger's (or a second account's) noreply committer passed. Measured: the fleet's whole history holds
 # exactly two noreply identities, the fleet account and GitHub's web-UI committer.
+# The allowance is read from the makefile only: set it there, above this block, to add an identity.
+# The identity pass refuses one from the environment or the command line, where a value left in
+# the shell (`GIT_IDENTITY_OK=.`) would match every author and pass any identity. It is never
+# exported, so a bare `export` in the makefile does not hand it to a sub-make as such a value.
 GIT_IDENTITY_OK ?= <214140984\+luxardolabs@users\.noreply\.github\.com>$$|<noreply@github\.com>$$
+unexport GIT_IDENTITY_OK
 
 # The secret scanner, PINNED and MIRRORED in the fleet registry. The fleet bans a moving tag
 # everywhere it can see one, and this used to ship `ghcr.io/gitleaks/gitleaks:latest` inside the asset every
@@ -2441,14 +2695,41 @@ GITLEAKS_IMAGE = $(if $(findstring /,$(LUXLINT)),$(dir $(LUXLINT)),zricethezav/)
 # never reported.
 # v17: the same for every `sed`, `sort` and `grep` that reads history bytes. BSD `grep` erroring on a
 # non-UTF-8 author name inside `|| true` left the identity pass empty, so it PASSED having read nothing.
+# Every pass reads this checkout's repository, never one a caller's GIT_DIR (or a git hook's) names:
+# the variables that point git elsewhere or change what it reads are unset for each pass.
+override GITLEAKS_HISTORY_ENV := unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_GRAFT_FILE GIT_NAMESPACE GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM;
+# Every pass reads the commits a push publishes, never a local `git replace` that shows git another
+# commit (another identity, message, path or content) in their place.
+gitleaks: override export GIT_NO_REPLACE_OBJECTS := 1
 gitleaks: ## secret scan over FULL HISTORY + the commit-identity pass (the hooks cover commit/push)
-	@set -e; C=$$(mktemp); O=$$(mktemp); trap 'rm -f "$$C" "$$O"' EXIT INT TERM; \
+	+@$(if $(or $(findstring i,$(filter-out -%,$(firstword $(MAKEFLAGS)))),$(findstring t,$(filter-out -%,$(firstword $(MAKEFLAGS))))),$(error REFUSING: make -i or -t would let a finding pass: run make gitleaks without it))$(if $(filter --eval=% -I% --include-dir%,$(filter-out $(MAKEOVERRIDES),$(MAKEFLAGS))),$(error REFUSING: --eval or -I adds makefile text from outside, which could set the identity allowance: run make gitleaks without it))$(if $(strip $(MAKEFILES)),$(error REFUSING: MAKEFILES ($(MAKEFILES)) reads other makefiles before this one: unset it))$(foreach v,SHELL .SHELLFLAGS,$(if $(filter environment% command,$(origin $(v))),$(error REFUSING: $(v) comes from the $(origin $(v)), so the scan would run in another shell)))true
+	@# A caller cannot change what this scan reads or how its failures count: make's -i and -t, makefile
+	@# text from --eval, -I or MAKEFILES (each could set the identity allowance), and a SHELL or
+	@# .SHELLFLAGS from outside are refused before any pass runs, on the first line, a `+` line: make runs
+	@# it under -t too, and under .ONESHELL the first line's prefix is the recipe's.
+	@# A shallow clone and a graft file each make git (and so every pass) read part of the history,
+	@# and the scanned-nothing check below agrees with them: both are refused before any pass. A
+	@# merge commit's own changes are read against its first parent (`--diff-merges=first-parent`), in
+	@# this scan and the binary and path passes: git shows a merge no diff by default, so a secret
+	@# only a merge added passed every pass. A partial clone (blobs fetched on demand, which the scan
+	@# container cannot do) is refused like a shallow one, and so is a scan whose git log failed partway
+	@# (gitleaks reports `ERR` and still exits 0). Every log reads the root commit (`--root`), without
+	@# the repository's textconv drivers or display settings, which could hide a file or the output.
+	@set -e; $(GITLEAKS_HISTORY_ENV) C=$$(mktemp); O=$$(mktemp); trap 'rm -f "$$C" "$$O"' EXIT INT TERM; \
+	[ "$$(git rev-parse --is-shallow-repository)" = false ] || { echo "REFUSING: this clone is shallow, so the scan would read only part of the published history: run git fetch --unshallow first."; exit 1; }; \
+	if [ -n "$$(git config --get extensions.partialClone)" ] || git config --get-regexp '^remote\..*\.promisor$$' | grep -q true; then \
+	  echo "REFUSING: this is a partial clone, so the scan cannot read the blobs it lacks: clone the repository in full first."; exit 1; fi; \
+	gf=$$(git rev-parse --path-format=absolute --git-path info/grafts); [ ! -e "$$gf" ] || { echo "REFUSING: $$gf rewrites history's parents, so the scan would skip the commits it hides: remove it (git replace --convert-graft-file) first."; exit 1; }; \
 	G=$$(git -C "$(CURDIR)" rev-parse --path-format=absolute --git-common-dir); \
 	n=$$(git -C "$(CURDIR)" rev-list --count --all); \
 	docker run --rm -v "$(CURDIR)":/repo $(LUXLINT) --emit-config gitleaks > "$$C"; \
-	rc=0; docker run --rm -v "$(CURDIR)":/repo -v "$$G":"$$G":ro -v "$$C":/gl.toml:ro -w /repo \
-	  $(GITLEAKS_IMAGE) git /repo -c /gl.toml --redact -v --ignore-gitleaks-allow > "$$O" 2>&1 || rc=$$?; \
+	rc=0; docker run --rm -e GIT_NO_REPLACE_OBJECTS=1 -v "$(CURDIR)":/repo -v "$$G":"$$G":ro -v "$$C":/gl.toml:ro -w /repo \
+	  $(GITLEAKS_IMAGE) git /repo -c /gl.toml --redact -v --ignore-gitleaks-allow \
+	  --log-opts='--all --full-history --root --diff-merges=first-parent --no-textconv --no-ext-diff --no-color --pretty=medium --date=default --no-abbrev-commit' > "$$O" 2>&1 || rc=$$?; \
 	cat "$$O"; [ "$$rc" -eq 0 ] || exit "$$rc"; \
+	if LC_ALL=C grep -Eq 'stderr is not empty|ERR[^A-Za-z]*\[git\]' "$$O"; then \
+	  echo "REFUSING: git failed partway through the history scan (ERR above), so what it had not read yet was never scanned."; exit 1; \
+	fi; \
 	if [ "$$n" -gt 0 ] && ! grep -Eq '(^|[^0-9])[1-9][0-9]* commits scanned' "$$O"; then \
 	  echo "REFUSING: gitleaks scanned no commit of a history holding $$n: the history scan read nothing (above)."; exit 1; \
 	fi
@@ -2456,17 +2737,22 @@ gitleaks: ## secret scan over FULL HISTORY + the commit-identity pass (the hooks
 	@# treats as binary: a NUL byte, UTF-16 (a `Localizable.strings`), or a `binary` / `-diff` attribute.
 	@# A token in any of them reached the remote with "no leaks found". So every path git ever showed as
 	@# binary is re-read as text, NULs stripped, and scanned by path (the config's path allowlists hold).
-	@set -e; C=$$(mktemp); D=$$(mktemp -d); trap 'rm -rf "$$C" "$$D"' EXIT INT TERM; \
+	@set -e; $(GITLEAKS_HISTORY_ENV) C=$$(mktemp); D=$$(mktemp -d); trap 'rm -rf "$$C" "$$D"' EXIT INT TERM; \
 	docker run --rm -v "$(CURDIR)":/repo $(LUXLINT) --emit-config gitleaks > "$$C"; \
-	git -c core.quotePath=false log --branches --tags HEAD --format= -p --no-ext-diff --no-textconv \
-	  > "$$D/patches"; \
-	LC_ALL=C sed -n 's|^Binary files .* and b/\(.*\) differ$$|\1|p' "$$D/patches" | LC_ALL=C sort -u > "$$D/binary"; \
+	git log --branches --tags HEAD --format= --name-only -z --root --diff-merges=first-parent > "$$D/names"; \
+	nl=$$(LC_ALL=C tr -cd '\n' < "$$D/names" | wc -c); \
+	[ "$$nl" -eq 0 ] || { echo "REFUSING: a path in history holds a newline, which this scan cannot name: rename it."; exit 1; }; \
+	git -c color.ui=never log --branches --tags HEAD --format= --numstat -z --no-renames --root \
+	  --diff-merges=first-parent --no-ext-diff --no-textconv > "$$D/numstat"; \
+	T=$$(printf '\t'); LC_ALL=C tr '\000' '\n' < "$$D/numstat" | LC_ALL=C sed -n "s/^-$$T-$$T//p" \
+	  | LC_ALL=C sort -u > "$$D/binary"; \
 	if [ -s "$$D/binary" ]; then \
 	  mkdir "$$D/t" "$$D/none"; \
 	  while IFS= read -r f; do \
 	    mkdir -p "$$D/t/$$(dirname "$$f")"; \
-	    git -c core.quotePath=false log --branches --tags HEAD --format= -p --text --no-ext-diff \
-	      --no-textconv -- "$$f" > "$$D/p"; \
+	    git -c color.ui=never -c diff.noprefix=false --literal-pathspecs log --branches --tags HEAD \
+	      --format= -p --text --no-color --src-prefix=a/ --dst-prefix=b/ --root --diff-merges=first-parent \
+	      --no-ext-diff --no-textconv -- "$$f" > "$$D/p"; \
 	    LC_ALL=C grep -a '^+' "$$D/p" | LC_ALL=C tr -d '\000' > "$$D/t/$$f"; \
 	  done < "$$D/binary"; \
 	  docker run --rm -v "$$D/t":/scan:ro -w /scan -v "$$D/none":/none:ro -v "$$C":/gl.toml:ro \
@@ -2476,7 +2762,7 @@ gitleaks: ## secret scan over FULL HISTORY + the commit-identity pass (the hooks
 	@# v13: every commit and annotated-tag MESSAGE, scanned as a file with the same config (credential
 	@# rules and the denylist). One `git log` and one `for-each-ref`, split on a header line carrying a
 	@# per-run nonce, so a message cannot forge a header and steer its own lines out of the scan.
-	@set -e; C=$$(mktemp); D=$$(mktemp -d); trap 'rm -rf "$$C" "$$D"' EXIT INT TERM; \
+	@set -e; $(GITLEAKS_HISTORY_ENV) C=$$(mktemp); D=$$(mktemp -d); trap 'rm -rf "$$C" "$$D"' EXIT INT TERM; \
 	docker run --rm -v "$(CURDIR)":/repo $(LUXLINT) --emit-config gitleaks > "$$C"; \
 	N=$$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n'); [ $${#N} -eq 32 ]; \
 	mkdir -p "$$D/t/commit-message" "$$D/t/tag-message" "$$D/none"; \
@@ -2497,10 +2783,11 @@ gitleaks: ## secret scan over FULL HISTORY + the commit-identity pass (the hooks
 	@# v14: what a push publishes besides content and messages: every file PATH in history and every
 	@# branch and tag NAME. A path is not a patch line, so `gitleaks git` never read one, and a file or
 	@# a branch named for an internal host passed every gate into a public remote.
-	@set -e; C=$$(mktemp); D=$$(mktemp -d); trap 'rm -rf "$$C" "$$D"' EXIT INT TERM; \
+	@set -e; $(GITLEAKS_HISTORY_ENV) C=$$(mktemp); D=$$(mktemp -d); trap 'rm -rf "$$C" "$$D"' EXIT INT TERM; \
 	docker run --rm -v "$(CURDIR)":/repo $(LUXLINT) --emit-config gitleaks > "$$C"; \
 	mkdir -p "$$D/t" "$$D/none"; \
-	git -c core.quotePath=false log --branches --tags HEAD --format= --name-only | LC_ALL=C sort -u > "$$D/t/paths"; \
+	git -c core.quotePath=false -c color.ui=never log --branches --tags HEAD --format= --name-only \
+	  --root --diff-merges=first-parent > "$$D/names"; LC_ALL=C sort -u < "$$D/names" > "$$D/t/paths"; \
 	git for-each-ref --format='%(refname:short)' refs/heads refs/tags > "$$D/t/ref-names"; \
 	docker run --rm -v "$$D/t":/scan:ro -w /scan -v "$$D/none":/none:ro -v "$$C":/gl.toml:ro \
 	  $(GITLEAKS_IMAGE) dir . -c /gl.toml --redact -v --ignore-gitleaks-allow \
@@ -2513,7 +2800,7 @@ gitleaks: ## secret scan over FULL HISTORY + the commit-identity pass (the hooks
 	@# Walks what THIS repo publishes (branches, tags, HEAD), NOT `--all`: a remote-tracking ref caches the
 	@# remote's state, which during a scrub is by definition the un-rewritten history you are about to
 	@# force-push over — `--all` refused the verified fix, and any `git fetch` re-armed it.
-	@bad=$$(git log --branches --tags HEAD --pretty='%an <%ae>%n%cn <%ce>' 2>/dev/null | LC_ALL=C sort -u \
+	@$(if $(filter environment% command,$(origin GIT_IDENTITY_OK)),$(error REFUSING: GIT_IDENTITY_OK comes from the $(origin GIT_IDENTITY_OK), so the caller chose which authors pass the identity pass: set it in the makefile))$(GITLEAKS_HISTORY_ENV) bad=$$(git log --branches --tags HEAD --pretty='%an <%ae>%n%cn <%ce>' 2>/dev/null | LC_ALL=C sort -u \
 	  | LC_ALL=C grep -vE '$(GIT_IDENTITY_OK)' || true); \
 	if [ -n "$$bad" ]; then \
 	  echo "REFUSING: a non-fleet identity appears in commit METADATA (author/committer):"; \

@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.310.2",
+  "guard_version": "0.331.0",
   "repo": "/repo",
   "targets": [
     {
@@ -94,14 +94,36 @@
           "inert_reason": "no HTTP surface: this collector target builds no FastAPI/Starlette app that a launch surface serves, so there is no Host header to refuse",
           "fix": "",
           "example": ""
+        },
+        {
+          "rule": "fw.no_concurrent_session_use",
+          "status": "INERT",
+          "since": "0.328.0",
+          "violations": 0,
+          "deferred": false,
+          "inert": true,
+          "inert_reason": "no function, provider or class in this app holds a SQLAlchemy session, so there is no session to share",
+          "fix": "",
+          "example": ""
+        },
+        {
+          "rule": "fw.broad_except_is_logged",
+          "status": "PASS",
+          "since": "0.330.0",
+          "violations": 0,
+          "deferred": false,
+          "inert": false,
+          "inert_reason": "",
+          "fix": "",
+          "example": ""
         }
       ],
       "summary": {
-        "PASS": 7,
+        "PASS": 8,
         "FAIL": 0,
         "XFAIL": 0,
         "XPASS": 0,
-        "INERT": 1
+        "INERT": 2
       }
     }
   ],
@@ -865,12 +887,12 @@
     }
   },
   "summary": {
-    "PASS": 70,
+    "PASS": 71,
     "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
-    "INERT": 6
+    "INERT": 7
   },
-  "commit": "5e860ff7f9c5b5a495062f51a3d6e482096a4a55",
-  "generated_at": "2026-10-22T14:43:10Z"
+  "commit": "e10143c7116dd701ab2abd845a86c56a0e5cc484",
+  "generated_at": "2026-10-30T02:23:28Z"
 }
