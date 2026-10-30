@@ -6,6 +6,7 @@ calling configure_logging(), records fall back to Python's default stderr handle
 aggregator silently loses them — this runs the real entrypoint and reads what it writes.
 """
 
+import contextvars
 import io
 import json
 import logging
@@ -14,6 +15,7 @@ import runpy
 import subprocess
 import sys
 from collections.abc import Iterator, Mapping
+from logging.handlers import MemoryHandler
 from pathlib import Path
 from typing import Any
 
@@ -125,7 +127,7 @@ def test_log_format_text_is_readable_not_json() -> None:
 @pytest.fixture
 def stream(monkeypatch: pytest.MonkeyPatch) -> Iterator[io.StringIO]:
     root = logging.getLogger()
-    handlers, level = root.handlers[:], root.level
+    handlers, level, trace_source = root.handlers[:], root.level, lc._trace_ids[0]
     # Registered so monkeypatch puts the stock makeRecord back after configure_logging swaps it.
     monkeypatch.setattr(logging.Logger, "makeRecord", logging.Logger.makeRecord)
     out = io.StringIO()
@@ -136,6 +138,7 @@ def stream(monkeypatch: pytest.MonkeyPatch) -> Iterator[io.StringIO]:
     _stream.clear()
     root.handlers[:] = handlers
     root.setLevel(level)
+    lc._trace_ids[0] = trace_source
 
 
 _stream: list[io.StringIO] = []
@@ -293,6 +296,11 @@ class TestTextFormat:
         assert stream.getvalue().rstrip().endswith("INFO app.x plain")
 
 
+_current_span: contextvars.ContextVar[tuple[str, str] | None] = contextvars.ContextVar(
+    "_current_span", default=None
+)
+
+
 class TestTraceIdSource:
     def test_ids_only_on_lines_made_inside_a_span(self, stream: io.StringIO) -> None:
         span: list[tuple[str, str] | None] = [("t1", "s1")]
@@ -305,17 +313,112 @@ class TestTraceIdSource:
         assert "trace_id" not in outside and "span_id" not in outside
         assert "attributes" not in inside
 
+    @pytest.mark.parametrize("error", [RuntimeError, AttributeError, LookupError])
     def test_raising_source_costs_the_ids_not_the_line(
-        self, stream: io.StringIO
+        self, stream: io.StringIO, error: type[Exception]
     ) -> None:
         def broken() -> tuple[str, str]:
-            raise RuntimeError("tracer down")
+            raise error("tracer down")
 
         _configure(trace_ids=broken)
         logging.getLogger("app.x").info("still written")
         (line,) = _lines(stream)
         assert line["message"] == "still written"
         assert "trace_id" not in line
+
+    def test_source_raising_after_a_span_writes_no_stale_ids(
+        self, stream: io.StringIO
+    ) -> None:
+        span: list[tuple[str, str] | None] = [("t1", "s1")]
+
+        def source() -> tuple[str, str] | None:
+            if span[0] is None:
+                raise RuntimeError("tracer down")
+            return span[0]
+
+        _configure(trace_ids=source)
+        logging.getLogger("app.x").info("inside")
+        span[0] = None
+        logging.getLogger("app.x").info("after")
+        _inside, after = _lines(stream)
+        assert "trace_id" not in after and "span_id" not in after
+
+    def test_source_is_called_once_per_record(self, stream: io.StringIO) -> None:
+        calls: list[int] = []
+
+        def source() -> tuple[str, str]:
+            calls.append(1)
+            return ("t1", "s1")
+
+        _configure(trace_ids=source)
+        logging.getLogger("app.x").info("m")
+        assert len(calls) == 1
+
+    def test_source_runs_in_the_callers_context(self, stream: io.StringIO) -> None:
+        _configure(trace_ids=_current_span.get)
+        token = _current_span.set(("t1", "s1"))
+        try:
+            logging.getLogger("app.x").info("m")
+        finally:
+            _current_span.reset(token)
+        (line,) = _lines(stream)
+        assert line["trace_id"] == "t1" and line["span_id"] == "s1"
+
+    def test_ids_are_the_records_otel_attributes(self, stream: io.StringIO) -> None:
+        _configure(trace_ids=lambda: ("t1", "s1"))
+        seen: list[logging.LogRecord] = []
+
+        def keep(record: logging.LogRecord) -> bool:
+            seen.append(record)
+            return True
+
+        logging.getLogger().handlers[0].addFilter(keep)
+        logging.getLogger("app.x").info("m")
+        assert seen[0].__dict__["otelTraceID"] == "t1"
+        assert seen[0].__dict__["otelSpanID"] == "s1"
+
+    def test_callers_own_otel_id_wins_over_the_source(
+        self, stream: io.StringIO
+    ) -> None:
+        _configure(trace_ids=lambda: ("t1", "s1"))
+        logging.getLogger("app.x").info("m", extra={"otelTraceID": "mine"})
+        (line,) = _lines(stream)
+        assert line["trace_id"] == "mine"
+
+    # A tracer is outside this repo's typing: these sources return what a defective one could.
+    def test_wrong_length_ids_cost_the_ids_not_the_line(
+        self, stream: io.StringIO
+    ) -> None:
+        _configure(trace_ids=lambda: ("t1", "s1", "extra"))
+        logging.getLogger("app.x").info("still written")
+        (line,) = _lines(stream)
+        assert line["message"] == "still written"
+        assert "trace_id" not in line
+
+    @pytest.mark.parametrize("ids", [(1, 2), ("t1", 2), (1, "s1")])
+    def test_non_string_ids_are_not_written(
+        self, stream: io.StringIO, ids: tuple[object, object]
+    ) -> None:
+        _configure(trace_ids=lambda: ids)
+        logging.getLogger("app.x").info("m")
+        (line,) = _lines(stream)
+        assert "trace_id" not in line and "span_id" not in line
+
+    def test_line_formatted_after_the_span_still_names_it(
+        self, stream: io.StringIO
+    ) -> None:
+        span: list[tuple[str, str] | None] = [("t1", "s1")]
+        _configure(trace_ids=lambda: span[0])
+        root = logging.getLogger()
+        buffered = MemoryHandler(
+            capacity=100, target=root.handlers[0], flushOnClose=False
+        )
+        root.handlers[:] = [buffered]
+        logging.getLogger("app.x").info("made inside")
+        span[0] = None
+        buffered.flush()
+        (line,) = _lines(stream)
+        assert line["trace_id"] == "t1" and line["span_id"] == "s1"
 
     def test_text_line_names_the_span(
         self, stream: io.StringIO, monkeypatch: pytest.MonkeyPatch
