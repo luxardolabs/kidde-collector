@@ -100,7 +100,7 @@ A simple asyncio poll loop. `app/main.py` validates the environment, connects to
 - `app/core/logging_config.py` — the fleet logging module (`luxarch --emit logging`, never hand-edited): JSON lines to stdout, `configure_logging()` called once in `app/main.py`; modules use `logging.getLogger(__name__)`
 - `app/health/check.py` — Docker HEALTHCHECK: healthy only while the `output/.last_success` heartbeat (touched by the poller after each cycle whose InfluxDB write landed) is fresh
 
-Validate layout conformance with `python /mnt/luxardolabs/check_layout.py .` (must be green).
+Layout conformance is checked by luxarch (`make arch`, pinned in the Makefile), which runs as a leg of `make check`.
 
 ### Data flow
 
