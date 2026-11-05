@@ -94,7 +94,7 @@ The deploy dir on the node (`/opt/kidde-collector` by default) holds only `compo
 ## Health, restart, and data
 
 - **Health:** `docker run --rm <image> python -m app.health.check` — non-zero exit means unhealthy. Healthy means a cycle reached InfluxDB recently: the collector touches `output/.last_success` after each successful write and clears it at startup. A collector that cannot log in to Kidde or write to InfluxDB goes unhealthy instead of reporting alive. See `KIDDE_COLLECTOR_HEALTH_CHECK_MAX_AGE`.
-- **Restart:** the Compose stacks use `restart: always`.
+- **Restart:** every long-running service uses `restart: unless-stopped`, written in `compose.yml` itself (no env variable sets it). A collector stopped by hand stays down across a daemon or host restart until it is started again.
 - **State:** the only durable state is `output/` (the session cookie + optional captures). InfluxDB holds the metrics.
 
 ## Upgrading

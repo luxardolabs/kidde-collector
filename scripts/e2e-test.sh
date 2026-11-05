@@ -76,6 +76,14 @@ if ! $DC ps --status running --services | grep -q '^kidde-collector$'; then
   $DC logs --tail=80 kidde-collector || true
   exit 1
 fi
+# ...and never exited: the restart policy brings an exited collector back, so "running" alone
+# cannot tell a clean run from an exit and a restart.
+restarts="$(docker inspect -f '{{.RestartCount}}' "$($DC ps -q kidde-collector)")"
+if [ "$restarts" != "0" ]; then
+  echo "✗ FAIL: collector exited and was restarted ${restarts} time(s) during the run"
+  $DC logs --tail=80 kidde-collector || true
+  exit 1
+fi
 
 count="$(influx_query "SELECT COUNT(\"temperature\") FROM \"${MEASUREMENT}\"")"
 echo "✓ collector healthy. influx ${MEASUREMENT} temperature count: ${count}"

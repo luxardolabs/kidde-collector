@@ -22,16 +22,27 @@ ENV/
 .coverage
 htmlcov/
 
-# Secrets, env files, credentials and keys must NEVER enter the image, at ANY depth: a bare
-# `.env.*` matches only at the context root, so a gitignored app/.env.local would ship inside
-# app/. Only the committed .env.example template is re-included.
+# Env files, credential files and keys are excluded at ANY depth: a bare `.env.*` matches only
+# at the context root, so a gitignored app/.env.local would ship inside app/. Only the committed
+# .env.example template is re-included. Matching is case-sensitive.
 **/.env
 **/.env.*
 **/*.env
+**/*.env.*
+**/.envrc
 !.env.example
 **/*credentials.json
+**/.netrc
+**/.pypirc
+**/.npmrc
+**/.aws
+**/.ssh
 **/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
 **/id_rsa*
+**/id_dsa*
 **/id_ecdsa*
 **/id_ed25519*
 # Editor backups beside source (app/config.py~ would ship a stale copy of the code)

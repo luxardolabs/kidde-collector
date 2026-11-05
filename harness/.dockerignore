@@ -1,14 +1,25 @@
 # Build context of the fake-Kidde harness image (`make harness-build`). The Dockerfile COPYs
-# only fake_kidde.py. Each class below is excluded at every depth, so nothing else can reach
-# the builder.
+# only fake_kidde.py. Each class below is excluded at every depth (case-sensitive), so none
+# of them can reach the builder.
 **/__pycache__/
 **/*.py[cod]
 **/.env
 **/.env.*
 **/*.env
+**/*.env.*
+**/.envrc
 **/*credentials.json
+**/.netrc
+**/.pypirc
+**/.npmrc
+**/.aws
+**/.ssh
 **/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
 **/id_rsa*
+**/id_dsa*
 **/id_ecdsa*
 **/id_ed25519*
 **/.git
