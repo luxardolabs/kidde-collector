@@ -6,7 +6,7 @@
 # for a single-service collector (no db/redis/nginx/css).
 # =============================================================================
 
-VERSION := $(shell cat VERSION 2>/dev/null || git -c safe.directory=$(CURDIR) describe --tags --always 2>/dev/null || echo "0.0.0-dev")
+VERSION := $(shell cat VERSION 2>/dev/null || git -c safe.directory='$(subst ','\'',$(CURDIR))' describe --tags --always 2>/dev/null || echo "0.0.0-dev")
 TIMESTAMP := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # Private registry host stays OUT of this public repo — set it in gitignored Makefile.local
