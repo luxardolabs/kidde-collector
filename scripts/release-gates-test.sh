@@ -115,13 +115,13 @@ label="VERSION reads the file under a quoted checkout path"
 if [ "$got" = "[$want]" ]; then echo "PASS  $label ($want)"; else echo "FAIL  $label: got $got, want [$want]"; fails=$((fails + 1)); fi
 rm -f "$QDIR/VERSION"
 want=$(git -C "$QDIR" describe --tags --always)
-# The checkout belongs to another user and no global config trusts it, so git describes it only
-# through the Makefile's own `safe.directory`.
+# Git treats the checkout as another user's, and no config from the system, the user or the
+# caller's environment trusts it, so git describes it only through the Makefile's own
+# `safe.directory`.
 label="VERSION falls back to git describe under a quoted checkout path owned by another user"
-if chown -R 65534 "$QDIR" 2>/dev/null; then
-  got=$(GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 make --no-print-directory -C "$QDIR" --eval 'print-version: ; @echo "[$(VERSION)]"' print-version 2>/dev/null)
-  if [ "$got" = "[$want]" ]; then echo "PASS  $label ($want)"; else echo "FAIL  $label: got $got, want [$want]"; fails=$((fails + 1)); fi
-else echo "NOT RUN  $label (chown needs root here)"; fi
+got=$(env -u GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT=0 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TEST_ASSUME_DIFFERENT_OWNER=1 \
+  make --no-print-directory -C "$QDIR" --eval 'print-version: ; @echo "[$(VERSION)]"' print-version 2>/dev/null)
+if [ "$got" = "[$want]" ]; then echo "PASS  $label ($want)"; else echo "FAIL  $label: got $got, want [$want]"; fails=$((fails + 1)); fi
 
 if [ "$fails" -eq 0 ]; then echo "release gates: all passed"; else echo "release gates: $fails FAILED"; fi
 exit $((fails > 0))

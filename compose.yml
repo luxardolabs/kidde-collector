@@ -66,7 +66,9 @@ services:
     # uncomment and use a port that is yours:
     #   ports: ["${INFLUX_PORT:-18386}:8086"]
     healthcheck:
-      test: ["CMD", "influx", "ping"]
+      # The real server, by address: during setup the CLI's default host is the temporary
+      # setup server, which answers before :8086 accepts connections.
+      test: ["CMD", "influx", "ping", "--host", "http://localhost:8086"]
       interval: 3s
       timeout: 3s
       retries: 30
@@ -116,7 +118,7 @@ services:
       - /var/lib/influxdb2
       - /etc/influxdb2
     healthcheck:
-      test: ["CMD", "influx", "ping"]
+      test: ["CMD", "influx", "ping", "--host", "http://localhost:8086"]
       interval: 2s
       timeout: 3s
       retries: 60
