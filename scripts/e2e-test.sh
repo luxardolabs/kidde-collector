@@ -17,7 +17,10 @@ cleanup() { $DC down -v >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
 echo "▶ starting e2e stack (images built outside compose)…"
-$DC up -d
+# InfluxDB first, healthy, then the collector: its startup ping fails fast on an unreachable
+# InfluxDB, so a collector started alongside it exits and is restarted until InfluxDB answers.
+$DC up -d --wait kidde_influxdb kidde_fake
+$DC up -d kidde-collector
 
 # Query InfluxDB (InfluxQL over the v1-compat API) from inside the influx container.
 influx_query() {
