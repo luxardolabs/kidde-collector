@@ -29,7 +29,8 @@ services:
       # see .env.dev.local.example. Later file wins on shared keys.
       - path: .env.dev.local
         required: false
-    restart: ${RESTART_POLICY:-unless-stopped}
+    restart: unless-stopped
+    oom_score_adj: -500
     healthcheck:
       test: ["CMD", "python3", "-m", "app.health.check"]
       interval: 30s
@@ -70,6 +71,7 @@ services:
       timeout: 3s
       retries: 30
     restart: unless-stopped
+    oom_score_adj: -500
 
   kidde_grafana:
     profiles: ["dev", "demo"]
@@ -95,6 +97,7 @@ services:
       kidde_influxdb:
         condition: service_healthy
     restart: unless-stopped
+    oom_score_adj: -500
 
   # The real InfluxDB the pytest suite writes to (`make test` — the emitted test block starts it in
   # a compose project of its own per run, waits on the healthcheck, and tears it down). Ephemeral
@@ -117,6 +120,7 @@ services:
       interval: 2s
       timeout: 3s
       retries: 60
+    oom_score_adj: 500
 
   # Fake Kidde cloud endpoint (the harness emulator) — no account, no hardware. Built
   # OUTSIDE compose by `make harness-build`, then run here by tag.
@@ -129,6 +133,7 @@ services:
       KIDDE_FAKE_LOCATION_ID: "${KIDDE_FAKE_LOCATION_ID:-356103}"
       KIDDE_FAKE_LOCATION_LABEL: "${KIDDE_FAKE_LOCATION_LABEL:-Demo Home}"
     restart: unless-stopped
+    oom_score_adj: -500
 
 volumes:
   kidde_influxdb_data:

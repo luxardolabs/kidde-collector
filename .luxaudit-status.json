@@ -1,12 +1,12 @@
 {
   "guard": "luxaudit",
-  "guard_version": "0.15.0",
+  "guard_version": "0.16.0",
   "repo": "/repo",
   "packages": 26,
   "source": "poetry.lock",
   "summary": {
     "PASS": 26,
-    "FAIL": 0,
+    "FAIL": 2,
     "XFAIL": 0
   },
   "vulnerable": [],
@@ -20,9 +20,35 @@
     "inert_reason": "",
     "error": "",
     "not_released": [],
-    "vulnerable": [],
+    "vulnerable": [
+      {
+        "package": "apt",
+        "installed": "3.0.3",
+        "vuln_id": "CVE-2026-109518",
+        "severity": "HIGH",
+        "layer": "os",
+        "path": "",
+        "image": "luxardolabs/kidde-collector:2026.10.3",
+        "fix": "3.0.4"
+      },
+      {
+        "package": "libapt-pkg7.0",
+        "installed": "3.0.3",
+        "vuln_id": "CVE-2026-109518",
+        "severity": "HIGH",
+        "layer": "os",
+        "path": "",
+        "image": "luxardolabs/kidde-collector:2026.10.3",
+        "fix": "3.0.4"
+      }
+    ],
     "deferred": []
   },
-  "commit": "e10143c7116dd701ab2abd845a86c56a0e5cc484",
-  "generated_at": "2026-10-30T02:23:28Z"
+  "ignore_rows": {
+    "stale": [],
+    "expired": [],
+    "unjudged": []
+  },
+  "commit": "2b9c1905a3279ba269076007b6188c586f76127a",
+  "generated_at": "2026-11-05T03:23:20Z"
 }

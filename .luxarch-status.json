@@ -1,6 +1,6 @@
 {
   "guard": "luxarch",
-  "guard_version": "0.331.0",
+  "guard_version": "0.343.0",
   "repo": "/repo",
   "targets": [
     {
@@ -221,6 +221,28 @@
         "rule": "repo.dev_tools_not_in_production",
         "status": "PASS",
         "since": "0.243.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
+        "rule": "repo.runtime_user_cannot_write_code",
+        "status": "PASS",
+        "since": "0.334.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
+        "rule": "repo.build_context_hygiene",
+        "status": "PASS",
+        "since": "0.339.0",
         "violations": 0,
         "deferred": false,
         "inert": false,
@@ -691,6 +713,28 @@
         "example": ""
       },
       {
+        "rule": "repo.compose_oom_ranked",
+        "status": "PASS",
+        "since": "0.343.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
+        "rule": "repo.compose_restarts_after_kill",
+        "status": "PASS",
+        "since": "0.343.0",
+        "violations": 0,
+        "deferred": false,
+        "inert": false,
+        "inert_reason": "",
+        "fix": "",
+        "example": ""
+      },
+      {
         "rule": "repo.compose_up_selects_services",
         "status": "PASS",
         "since": "0.264.0",
@@ -879,7 +923,7 @@
       }
     ],
     "summary": {
-      "PASS": 63,
+      "PASS": 67,
       "FAIL": 0,
       "XFAIL": 0,
       "XPASS": 0,
@@ -887,12 +931,12 @@
     }
   },
   "summary": {
-    "PASS": 71,
+    "PASS": 75,
     "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
     "INERT": 7
   },
-  "commit": "e10143c7116dd701ab2abd845a86c56a0e5cc484",
-  "generated_at": "2026-10-30T02:23:28Z"
+  "commit": "2b9c1905a3279ba269076007b6188c586f76127a",
+  "generated_at": "2026-11-05T03:23:20Z"
 }

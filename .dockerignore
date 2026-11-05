@@ -2,13 +2,13 @@
 # stage mounts the source at run instead of baking it. Exclude everything that must never
 # enter an image or would bust the build cache.
 
-# Git
-.git
+# Git, at every depth
+**/.git
 .gitignore
 
-# Python / caches — at EVERY depth: a bare pattern matches only at the context root, so
-# `__pycache__` alone left app/**/__pycache__ in the image.
-**/__pycache__
+# Python / caches. Bytecode is excluded at EVERY depth: a bare pattern matches only at the
+# context root, so `__pycache__` alone would let app/**/__pycache__ into the image.
+**/__pycache__/
 **/*.py[cod]
 *.so
 .Python
@@ -22,11 +22,18 @@ ENV/
 .coverage
 htmlcov/
 
-# Secrets / env — must NEVER enter the image, at ANY depth: a bare `.env.*` matches only at the
-# context root, so a gitignored app/.env.local shipped inside app/ (only .env.example is harmless)
+# Secrets, env files, credentials and keys must NEVER enter the image, at ANY depth: a bare
+# `.env.*` matches only at the context root, so a gitignored app/.env.local would ship inside
+# app/. Only the committed .env.example template is re-included.
 **/.env
 **/.env.*
+**/*.env
 !.env.example
+**/*credentials.json
+**/*.pem
+**/id_rsa*
+**/id_ecdsa*
+**/id_ed25519*
 # Editor backups beside source (app/config.py~ would ship a stale copy of the code)
 **/*~
 

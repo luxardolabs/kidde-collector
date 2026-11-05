@@ -17,13 +17,12 @@ target = "py314"  # this collector runs Python 3.14 — per-repo fact (since lux
                   # PEP 649 deferred annotations; ruff/mypy target py314 accordingly.
 
 [gitleaks]
-# Repo-specific known NON-secrets, appended to the canonical gitleaks allowlist at emit time
-# (PATH regexes only; the org denylist for internal infra domain / retired identity stays baked in the
-# luxlint image, never committed). .env.example / .env.demo / Makefile.local.example are already
-# canonical. These are the demo/e2e/emulator files carrying throwaway test tokens.
+# Repo-specific known NON-secrets: PATH regexes that luxlint emits as an allowlist scoped to the
+# credential rules only, so the org denylist (baked in the luxlint image, never committed) still
+# fires in these files. .env.example / .env.demo / Makefile.local.example are already canonical.
+# These are the demo/e2e/emulator files carrying throwaway test tokens.
 allow = [
     '''(^|/)\.env\.dev\.local\.example$''',
-    '''(^|/)compose\.e2e\.yml$''',
     '''(^|/)scripts/e2e-test\.sh$''',
     '''(^|/)harness/fake_kidde\.py$''',
 ]

@@ -1,6 +1,6 @@
 {
   "guard": "luxlint",
-  "guard_version": "0.70.1",
+  "guard_version": "0.74.0",
   "repo": "/repo",
   "source": [
     "app",
@@ -59,6 +59,14 @@
       "rule": "secret.githooks_wired",
       "status": "PASS",
       "since": "0.10.0",
+      "violations": 0,
+      "sites": [],
+      "deferred": false
+    },
+    {
+      "rule": "secret.gitleaks_allow_live",
+      "status": "PASS",
+      "since": "0.71.0",
       "violations": 0,
       "sites": [],
       "deferred": false
@@ -188,13 +196,13 @@
     }
   ],
   "summary": {
-    "PASS": 19,
+    "PASS": 20,
     "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
     "INERT": 3
   },
   "mypy": "separate: `luxlint --mypy` ([mypy].baseline ratchet)",
-  "commit": "e10143c7116dd701ab2abd845a86c56a0e5cc484",
-  "generated_at": "2026-10-30T02:23:28Z"
+  "commit": "2b9c1905a3279ba269076007b6188c586f76127a",
+  "generated_at": "2026-11-05T03:23:20Z"
 }
