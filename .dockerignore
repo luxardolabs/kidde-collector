@@ -8,8 +8,13 @@
 !app/**/*.py
 
 # Classes that must never ship even inside a re-included path. They come after the re-includes
-# so they match last, at every depth.
+# so they match last, at every depth. A directory class names its contents too (`dir/**`): the
+# directory pattern alone matches only the directory, and `!app/**/*.py` would win for a module
+# inside it.
 **/__pycache__/
+**/__pycache__/**
+**/.git/**
+**/output/**
 **/*.py[cod]
 **/.git
 **/.env
