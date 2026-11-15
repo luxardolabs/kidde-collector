@@ -7,6 +7,14 @@ kind = "collector"
 app = "app"
 source_client = ["collector/session.py"]   # kidde's long-lived source session
 
+# How the dev stack is reached on the dev host (FLEET-BUILD-DEPLOY-STANDARD, "The dev host"). The
+# dev lane runs the collector alone (DEV_PROFILES empty): it listens on nothing and is reached by
+# nothing, so there is no front proxy and no edge route. Its service is the collector container;
+# `make smoke` proves it by that container's own HEALTHCHECK (SMOKE_CONTAINERS), not by a URL.
+[dev_host]
+front = "app"
+service = "kidde-collector"
+
 # --- opt-in overlays: decided, not merely absent -------------------------------
 #
 # Recorded as a first-class disposition (luxarch 0.135.0 [observability].exempt_reason)
