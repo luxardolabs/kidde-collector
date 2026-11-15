@@ -32,7 +32,7 @@ make build-local   # build the runtime image from current source (no push)
 make test-e2e      # hardware-free end-to-end: fake Kidde -> collector -> InfluxDB, asserted
 make demo-up       # self-contained demo (fake Kidde + InfluxDB + Grafana)
 make dev-up        # dev stack: real Kidde account + bundled InfluxDB + Grafana
-make build-local && docker compose --env-file .env.dev up -d   # collector-only, against YOUR InfluxDB (edit .env.dev)
+make build-local && docker compose --env-file .env.dev up -d   # collector-only, against YOUR InfluxDB (.env.dev: REGISTRY= TAG=local)
 
 make lint          # luxlint: canonical ruff + docstrings + secret-config guard (mount-only)
 make mypy          # luxlint type leg: mypy with the fleet stubs baked (mount-only)

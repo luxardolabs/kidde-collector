@@ -45,13 +45,15 @@ If you already run InfluxDB and Grafana, run just the collector and point it at 
 1. Create your environment file from the template:
    ```bash
    cp .env.example .env.dev
-   # edit .env.dev — your Kidde creds + your InfluxDB URL / org / bucket / token
+   # edit .env.dev — your Kidde creds + your InfluxDB URL / org / bucket / token,
+   # and REGISTRY= (empty) + TAG=local to run the image you build below
    ```
 1. Start the collector:
    ```bash
-   make up                   # builds locally and runs against your InfluxDB
-   make logs                 # follow it
-   make down                 # stop
+   make build-local                                  # builds kidde-collector:local
+   docker compose --env-file .env.dev up -d          # runs it against your InfluxDB
+   docker compose --env-file .env.dev logs -f        # follow it
+   docker compose --env-file .env.dev down           # stop
    ```
 
 To run the published image directly instead of building locally, see [DEPLOYMENT.md](DEPLOYMENT.md).

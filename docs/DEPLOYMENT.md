@@ -15,13 +15,13 @@ Pin a specific `:<version>` for anything you run unattended: a version tag never
 
 ## The run stacks (one compose.yml, five profiles)
 
-| Stack          | how it runs                           | source          | InfluxDB/Grafana          | make            |
-| -------------- | ------------------------------------- | --------------- | ------------------------- | --------------- |
-| collector-only | `--env-file .env.dev` (no profile)    | real            | external (yours)          | `make up`       |
-| prod           | `--env-file .env.prod` (no profile)   | real            | external (yours)          | `make prod-*`   |
-| dev            | `--env-file .env.demo --profile dev`  | real            | bundled, auto-provisioned | `make dev-up`   |
-| demo           | `--env-file .env.demo --profile demo` | fake (emulator) | bundled, auto-provisioned | `make demo-up`  |
-| test           | `--env-file .env.e2e --profile e2e`   | fake            | bundled, no Grafana       | `make test-e2e` |
+| Stack          | how it runs                           | source          | InfluxDB/Grafana          | make                                       |
+| -------------- | ------------------------------------- | --------------- | ------------------------- | ------------------------------------------ |
+| collector-only | `--env-file .env.dev` (no profile)    | real            | external (yours)          | `docker compose --env-file .env.dev up -d` |
+| prod           | `--env-file .env.prod` (no profile)   | real            | external (yours)          | `make prod-*`                              |
+| dev            | `--env-file .env.demo --profile dev`  | real            | bundled, auto-provisioned | `make dev-up`                              |
+| demo           | `--env-file .env.demo --profile demo` | fake (emulator) | bundled, auto-provisioned | `make demo-up`                             |
+| test           | `--env-file .env.e2e --profile e2e`   | fake            | bundled, no Grafana       | `make test-e2e`                            |
 
 All stacks are `.yml`, run on the Docker bridge network (the Kidde API is a cloud endpoint — no host networking), and Compose never builds except the fake-Kidde harness in the demo/test stacks.
 

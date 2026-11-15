@@ -11,7 +11,9 @@ name: ${COMPOSE_NAME:-kidde-collector}
 #   docker compose --env-file .env.demo --profile dev  up -d       # REAL Kidde + bundled stack
 #   docker compose --env-file .env.e2e  --profile e2e  up -d       # hardware-free e2e
 #
-# The Makefile wraps all of these (`make up`, `make demo-up`, `make dev-up`, `make test-e2e`).
+# The Makefile wraps the bundled stacks (`make demo-up`, `make dev-up`, `make test-e2e`) on this
+# machine; its collector-only targets (`make dev-deploy`, `make up`, `make down`, `make logs`) drive
+# the fleet's dev host (DEV_HOST), so run that stack by hand with the command above anywhere else.
 # Kidde is a cloud API, so the collector publishes NO port — it reaches OUT to Kidde and OUT
 # to InfluxDB. Only Grafana publishes, because a human opens it in a browser.
 

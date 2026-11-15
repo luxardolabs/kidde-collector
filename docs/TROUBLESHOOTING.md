@@ -3,7 +3,7 @@
 Common issues and how to resolve them. Start by reading the collector logs — most problems are visible there:
 
 ```bash
-make logs        # collector-only stack
+docker compose --env-file .env.dev logs -f   # collector-only stack
 make dev-logs    # dev stack
 make demo-logs   # demo stack
 # or: docker logs -f kidde-collector

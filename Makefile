@@ -2181,11 +2181,15 @@ docker-clean: ## Remove local image tags (:sha-<commit>, :dev alias, :$(VERSION)
 # These targets drive that same daemon, so `make up` never starts a second collector on this machine
 # beside it on one Kidde account and one output directory (a 403 in either would clear the other's
 # session, and either one's heartbeat would keep the other "healthy").
-up down restart logs ps shell: private export DOCKER_HOST = ssh://$(DEV_HOST)
+# `make up` starts it through dev-pin, so it gets the same refusals: the committed DEV_HOST only, the
+# main checkout only, the dev host proven to read this directory and env file. The others reach the
+# daemon the same way dev-pin does (`local` is this shell's docker).
+down restart logs ps shell: private export DOCKER_HOST = $(if $(filter-out local,$(IB_DEV_HOST)),ssh://$(IB_DEV_HOST),$(IB_AMBIENT_DOCKER_HOST))
 
 up: ## Start the dev stack on the dev host at .env.dev's pinned TAG (make dev-deploy builds, pins and starts it)
-	$(RUN_DC) up -d
-	@echo "kidde-collector running on $(DEV_HOST) (collector only)"
+	@t=$$(sed -n 's/^TAG=//p' .env.dev 2>/dev/null | tail -n 1); \
+	[ -n "$$t" ] || { echo "REFUSING: .env.dev has no TAG= line; run make dev-deploy, or make dev-pin TAG=<a published tag>"; exit 1; }; \
+	$(MAKE) --no-print-directory dev-pin TAG="$$t"
 
 down: ## Stop the collector
 	$(RUN_DC) down
