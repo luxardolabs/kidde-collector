@@ -1,6 +1,6 @@
 {
   "guard": "luxlint",
-  "guard_version": "0.74.0",
+  "guard_version": "0.79.1",
   "repo": "/repo",
   "source": [
     "app",
@@ -89,19 +89,21 @@
     },
     {
       "rule": "lint.eslint",
-      "status": "PASS",
+      "status": "INERT",
       "since": "0.18.0",
       "violations": 0,
       "sites": [],
-      "deferred": false
+      "deferred": false,
+      "inert_reason": "no JavaScript to lint: no `[js]` block declares any (lint.js_declared reds first-party app JS left undeclared)"
     },
     {
       "rule": "lint.js_declared",
-      "status": "PASS",
+      "status": "INERT",
       "since": "0.25.0",
       "violations": 0,
       "sites": [],
-      "deferred": false
+      "deferred": false,
+      "inert_reason": "no JavaScript to wire: no first-party app JS (`<source path>/static/js/*.js`) and no `[js]` block"
     },
     {
       "rule": "lint.source_declared",
@@ -164,19 +166,21 @@
     },
     {
       "rule": "docs.coverage",
-      "status": "PASS",
+      "status": "INERT",
       "since": "0.5.0",
       "violations": 0,
       "sites": [],
-      "deferred": false
+      "deferred": false,
+      "inert_reason": "docstring checks are opt-in and this repo's `[docs]` block does not enable this one"
     },
     {
       "rule": "docs.substantive",
-      "status": "PASS",
+      "status": "INERT",
       "since": "0.5.0",
       "violations": 0,
       "sites": [],
-      "deferred": false
+      "deferred": false,
+      "inert_reason": "docstring checks are opt-in and this repo's `[docs]` block does not enable this one"
     },
     {
       "rule": "docs.markdown_format",
@@ -196,13 +200,13 @@
     }
   ],
   "summary": {
-    "PASS": 20,
+    "PASS": 16,
     "FAIL": 0,
     "XFAIL": 0,
     "XPASS": 0,
-    "INERT": 3
+    "INERT": 7
   },
   "mypy": "separate: `luxlint --mypy` ([mypy].baseline ratchet)",
-  "commit": "e0f02b1e0db1411afc181c34e59945a323ea76e6",
-  "generated_at": "2026-11-05T19:41:39Z"
+  "commit": "1b0c544da0df96b207302582a0e9f0e87b59aef1",
+  "generated_at": "2026-11-15T19:37:39Z"
 }

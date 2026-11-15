@@ -1,47 +1,27 @@
 {
   "guard": "luxaudit",
-  "guard_version": "0.16.0",
+  "guard_version": "0.18.0",
   "repo": "/repo",
   "packages": 26,
   "source": "poetry.lock",
   "summary": {
     "PASS": 26,
-    "FAIL": 2,
+    "FAIL": 0,
     "XFAIL": 0
   },
   "vulnerable": [],
   "deferred": [],
   "banned": [],
   "not_audited": [],
+  "by_public_version": [],
   "warnings": [],
   "image": {
-    "ref": "luxardolabs/kidde-collector:2026.10.3",
+    "ref": "luxardolabs/kidde-collector:2026.11.0",
     "inert": false,
     "inert_reason": "",
-    "error": "",
+    "error": "the registry has luxardolabs/kidde-collector:2026.11.0, but the scanner could not read it as an image: : no podman socket found: stat podman/podman.sock: no such file or directory\n\t* remote error: GET https://<registry>/v2/luxardolabs/kidde-collector/manifests/sha256:e56326c2ffbe2ca6e500560f00c0887cf4738340029d1fae4b23fa69c9ba4871: MANIFEST_UNKNOWN: manifest unknown; map[Name:luxardolabs/kidde-collector Revision:sha256:e56326c2ffbe2ca6e500560f00c0887cf4738340029d1fae4b23fa69c9ba4871]",
     "not_released": [],
-    "vulnerable": [
-      {
-        "package": "apt",
-        "installed": "3.0.3",
-        "vuln_id": "CVE-2026-109518",
-        "severity": "HIGH",
-        "layer": "os",
-        "path": "",
-        "image": "luxardolabs/kidde-collector:2026.10.3",
-        "fix": "3.0.4"
-      },
-      {
-        "package": "libapt-pkg7.0",
-        "installed": "3.0.3",
-        "vuln_id": "CVE-2026-109518",
-        "severity": "HIGH",
-        "layer": "os",
-        "path": "",
-        "image": "luxardolabs/kidde-collector:2026.10.3",
-        "fix": "3.0.4"
-      }
-    ],
+    "vulnerable": [],
     "deferred": []
   },
   "ignore_rows": {
@@ -49,6 +29,6 @@
     "expired": [],
     "unjudged": []
   },
-  "commit": "e0f02b1e0db1411afc181c34e59945a323ea76e6",
-  "generated_at": "2026-11-05T19:41:39Z"
+  "commit": "1b0c544da0df96b207302582a0e9f0e87b59aef1",
+  "generated_at": "2026-11-15T19:37:39Z"
 }
