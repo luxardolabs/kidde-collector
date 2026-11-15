@@ -63,6 +63,8 @@ compose*.yaml
 compose*.yml
 Dockerfile*
 Makefile
+# Site config: the registry and hosts, gitignored and never part of an image
+Makefile.local
 
 # OS / editor
 **/.DS_Store
