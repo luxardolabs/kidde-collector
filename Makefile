@@ -2177,9 +2177,15 @@ docker-clean: ## Remove local image tags (:sha-<commit>, :dev alias, :$(VERSION)
 
 ##@ Collector-only — plug into your existing InfluxDB/Grafana (compose.yml, .env.dev)
 
-up: build-local ## Build locally + start the collector against YOUR external InfluxDB (edit .env.dev)
+# The collector-only lane is the dev stack, and it runs where `make dev-deploy` puts it: on DEV_HOST.
+# These targets drive that same daemon, so `make up` never starts a second collector on this machine
+# beside it on one Kidde account and one output directory (a 403 in either would clear the other's
+# session, and either one's heartbeat would keep the other "healthy").
+up down restart logs ps shell: private export DOCKER_HOST = ssh://$(DEV_HOST)
+
+up: ## Start the dev stack on the dev host at .env.dev's pinned TAG (make dev-deploy builds, pins and starts it)
 	$(RUN_DC) up -d
-	@echo "kidde-collector $(VERSION) running (collector only)"
+	@echo "kidde-collector running on $(DEV_HOST) (collector only)"
 
 down: ## Stop the collector
 	$(RUN_DC) down

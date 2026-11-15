@@ -32,7 +32,7 @@ make build-local   # build the runtime image from current source (no push)
 make test-e2e      # hardware-free end-to-end: fake Kidde -> collector -> InfluxDB, asserted
 make demo-up       # self-contained demo (fake Kidde + InfluxDB + Grafana)
 make dev-up        # dev stack: real Kidde account + bundled InfluxDB + Grafana
-make up            # collector-only, against YOUR external InfluxDB (edit .env.dev)
+make build-local && docker compose --env-file .env.dev up -d   # collector-only, against YOUR InfluxDB (edit .env.dev)
 
 make lint          # luxlint: canonical ruff + docstrings + secret-config guard (mount-only)
 make mypy          # luxlint type leg: mypy with the fleet stubs baked (mount-only)
@@ -59,13 +59,13 @@ Dependencies are managed with **Poetry** (`pyproject.toml` + committed `poetry.l
 
 Distinguished by source (real vs fake Kidde) and observability (external vs bundled). All `.yml`, short-form volumes, on the **bridge network** (Kidde is a cloud API — no host networking). Compose never builds except the fake-Kidde service in demo/e2e.
 
-| Stack          | how it runs                           | source          | InfluxDB/Grafana          | make            |
-| -------------- | ------------------------------------- | --------------- | ------------------------- | --------------- |
-| collector-only | `--env-file .env.dev` (no profile)    | real            | external (yours)          | `make up`       |
-| prod           | `--env-file .env.prod` (no profile)   | real            | external (yours)          | `make prod-*`   |
-| dev            | `--env-file .env.demo --profile dev`  | real            | bundled, auto-provisioned | `make dev-up`   |
-| demo           | `--env-file .env.demo --profile demo` | fake (emulator) | bundled, auto-provisioned | `make demo-up`  |
-| test           | `--env-file .env.e2e --profile e2e`   | fake            | bundled, no Grafana       | `make test-e2e` |
+| Stack          | how it runs                           | source          | InfluxDB/Grafana          | make                                       |
+| -------------- | ------------------------------------- | --------------- | ------------------------- | ------------------------------------------ |
+| collector-only | `--env-file .env.dev` (no profile)    | real            | external (yours)          | `docker compose --env-file .env.dev up -d` |
+| prod           | `--env-file .env.prod` (no profile)   | real            | external (yours)          | `make prod-*`                              |
+| dev            | `--env-file .env.demo --profile dev`  | real            | bundled, auto-provisioned | `make dev-up`                              |
+| demo           | `--env-file .env.demo --profile demo` | fake (emulator) | bundled, auto-provisioned | `make demo-up`                             |
+| test           | `--env-file .env.e2e --profile e2e`   | fake            | bundled, no Grafana       | `make test-e2e`                            |
 
 ## Configuration
 
