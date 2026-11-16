@@ -13,7 +13,7 @@ override VERSION := $(strip $(shell cat VERSION 2>/dev/null))
 ifeq ($(VERSION),)
 $(error REFUSING: no VERSION file in $(CURDIR), or it is empty. It is the tracked single version source: run make from the repository root (make -C <repo>), or restore it with git checkout -- VERSION)
 endif
-ifeq ($(shell printf '%s\n' '$(subst ','\'',$(VERSION))' | grep -Exc '[0-9]{4}\.[0-9]{2}\.[0-9]+'),0)
+ifneq ($(shell printf '%s\n' '$(subst ','\'',$(VERSION))' | grep -Exc '[0-9]{4}\.(0[1-9]|1[0-2])\.[0-9]+'),1)
 $(error REFUSING: VERSION is "$(VERSION)", not a CalVer YYYY.MM.MICRO such as 2026.11.0. Fix the VERSION file)
 endif
 TIMESTAMP := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)

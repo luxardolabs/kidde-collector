@@ -123,7 +123,7 @@ label="make refuses when the VERSION file is empty"
 out=$(make --no-print-directory -C "$QDIR" --eval 'print-version: ; @echo "[$(VERSION)]"' print-version 2>&1); rc=$?
 if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'no VERSION file'; then echo "PASS  $label"
 else echo "FAIL  $label: rc=$rc, output: $out"; fails=$((fails + 1)); fi
-for bad in 'v2026.11.0' "$(printf '\357\273\2772026.11.0')" '2026.11'; do
+for bad in 'v2026.11.0' "$(printf '\357\273\2772026.11.0')" '2026.11' '2026.13.0' '2026.00.0'; do
   printf '%s\n' "$bad" > "$QDIR/VERSION"
   label="make refuses a VERSION that is not CalVer ($(printf '%s' "$bad" | od -An -c | tr -s ' '))"
   out=$(make --no-print-directory -C "$QDIR" --eval 'print-version: ; @echo "[$(VERSION)]"' print-version 2>&1); rc=$?
@@ -131,6 +131,12 @@ for bad in 'v2026.11.0' "$(printf '\357\273\2772026.11.0')" '2026.11'; do
   else echo "FAIL  $label: rc=$rc, output: $out"; fails=$((fails + 1)); fi
 done
 git -C "$QDIR" checkout -q -- VERSION
+# The shape check refuses when it cannot run, not only when it answers no.
+mkdir -p "$T/nogrep"; ln -sf "$(command -v make)" "$T/nogrep/make"; ln -sf "$(command -v cat)" "$T/nogrep/cat"
+label="make refuses when the VERSION shape check cannot run (no grep)"
+out=$(PATH="$T/nogrep" make --no-print-directory -C "$QDIR" --eval 'print-version: ; @echo "[$(VERSION)]"' print-version 2>&1); rc=$?
+if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'not a CalVer'; then echo "PASS  $label"
+else echo "FAIL  $label: rc=$rc, output: $out"; fails=$((fails + 1)); fi
 printf 'VERSION :=\n' > "$QDIR/Makefile.local"
 label="Makefile.local cannot replace VERSION"
 got=$(make --no-print-directory -C "$QDIR" --eval 'print-version: ; @echo "[$(VERSION)]"' print-version 2>/dev/null)
