@@ -198,6 +198,10 @@ PUBLIC_LATEST   ?= 1
 # .env.dev; DEV_PROFILES stays empty). The collector serves nothing over HTTP, so `make smoke` probes
 # it by its container's health (SMOKE_CONTAINERS).
 DEV_HOST := devhost
+# The dev Grafana starts from bind-mounted files compose cannot see change: its password guard and
+# its provisioning. A deploy that changed either recreates it, or the old container keeps running.
+DEV_RECREATE := kidde_dev_grafana
+kidde_dev_grafana_RECREATE_PATHS := ops/grafana/dev-entrypoint.sh grafana/provisioning
 
 # ── Release gates this repo adds IN FRONT of the image block (prerequisites, never recipe edits) ─
 # The lock audit gates every push: the block's candidate scan only refuses fixable HIGH/CRITICAL in

@@ -75,18 +75,54 @@ def test_the_dev_grafana_starts_through_the_password_guard() -> None:
     assert "GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-}" in service
 
 
+def test_a_refused_dev_grafana_fails_the_deploy() -> None:
+    """`dev-pin` waits for healthy services; with no healthcheck a Grafana the guard refused
+    restarts forever while the deploy reports green."""
+    service = _service("kidde_dev_grafana")
+    assert re.search(
+        r'^    healthcheck:\n      test: \["CMD", "wget", "-q", "-O", "/dev/null", '
+        r'"http://localhost:3000/api/health"\]$',
+        service,
+        re.M,
+    )
+
+
+def test_a_changed_guard_or_provisioning_recreates_the_dev_grafana() -> None:
+    """Compose does not recreate a container when a bind-mounted file changes, so a fix to
+    the guard would deploy green while the old container keeps running."""
+    makefile = (REPO / "Makefile").read_text()
+    assert re.search(r"^DEV_RECREATE := kidde_dev_grafana$", makefile, re.M)
+    assert re.search(
+        r"^kidde_dev_grafana_RECREATE_PATHS := ops/grafana/dev-entrypoint\.sh"
+        r" grafana/provisioning$",
+        makefile,
+        re.M,
+    )
+
+
+def test_the_stacks_admin_passwords_never_reach_the_collector() -> None:
+    """The env file the collector loads also configures its stack's InfluxDB and Grafana."""
+    collector = _service("kidde-collector")
+    assert re.search(
+        r'^    environment:\n      INFLUX_PASSWORD: ""\n      GRAFANA_PASSWORD: ""$',
+        collector,
+        re.M,
+    )
+
+
 def _guard(
-    tmp_path: Path, password: str, cli_exit: int = 0
+    tmp_path: Path, password: str, cli_exit: int = 0, cli_stdout: str = ""
 ) -> tuple[subprocess.CompletedProcess[str], list[str]]:
     """Run the dev Grafana entrypoint with a stand-in `grafana` that records its arguments
-    (one call per line) and what it read on stdin (in `<tmp>/stdin`)."""
+    (one call per line) and what it read on stdin (in `<tmp>/stdin`), and prints
+    `cli_stdout` on its stdout as the real CLI prints its reasons."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     calls = tmp_path / "calls"
     cli = bin_dir / "grafana"
     cli.write_text(
         f'#!/bin/sh\nprintf "%s\\n" "$*" >> {calls}\ncat > {tmp_path / "stdin"}\n'
-        f"exit {cli_exit}\n"
+        f"printf '%s' '{cli_stdout}'\nexit {cli_exit}\n"
     )
     cli.chmod(0o755)
     run = subprocess.run(
@@ -146,7 +182,11 @@ def test_the_dev_grafana_sets_its_admin_password_on_every_start(
 def test_the_dev_grafana_does_not_start_when_its_password_cannot_be_set(
     tmp_path: Path,
 ) -> None:
-    run, calls = _guard(tmp_path, "S3cret-pw", cli_exit=1)
+    """The real CLI prints why it refused (a password policy failure) on stdout: that reason
+    reaches the container's log beside the REFUSING line."""
+    reason = "Error: the new password does not meet the password policy criteria"
+    run, calls = _guard(tmp_path, "S3cret-pw", cli_exit=1, cli_stdout=reason)
     assert run.returncode == 1
     assert "REFUSING" in run.stderr
+    assert reason in run.stderr
     assert len(calls) == 1

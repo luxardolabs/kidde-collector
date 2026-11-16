@@ -29,9 +29,10 @@ case "$password" in
 esac
 
 # On stdin, not as an argument: a password starting with `-` would be read as a flag, and an
-# argument shows in `ps`. The CLI's own reason goes to stderr; its stdout is discarded.
+# argument shows in `ps`. The CLI prints its reason for a refusal on stdout (a password policy
+# failure, say), so stdout goes to the log too; it never echoes the password.
 if ! printf '%s' "$password" |
-	grafana cli --homepath /usr/share/grafana admin reset-admin-password --password-from-stdin >/dev/null; then
+	grafana cli --homepath /usr/share/grafana admin reset-admin-password --password-from-stdin >&2; then
 	echo "REFUSING: could not set the admin password from GRAFANA_PASSWORD (grafana cli's reason above)" >&2
 	exit 1
 fi

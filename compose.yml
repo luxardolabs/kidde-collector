@@ -41,6 +41,11 @@ services:
       # compose command you run by hand would then take the dev account.
       - path: ${KIDDE_LOCAL_ENV_FILE:-/dev/null}
         required: false
+    # The env file also configures the stack's own InfluxDB and Grafana. Their admin passwords
+    # are blanked here so they never reach the collector, which holds only its InfluxDB token.
+    environment:
+      INFLUX_PASSWORD: ""
+      GRAFANA_PASSWORD: ""
     restart: unless-stopped
     oom_score_adj: -500
     healthcheck:
@@ -170,6 +175,13 @@ services:
       # table (the edge repo's README, "The dev-edge network and the address table").
       dev-edge:
         ipv4_address: 172.30.0.16
+    # `dev-pin` waits for healthy: a Grafana the guard refused restarts forever, and without a
+    # healthcheck the deploy would report green over it.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/api/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
     depends_on:
       kidde_dev_influxdb:
         condition: service_healthy
