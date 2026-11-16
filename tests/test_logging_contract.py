@@ -1,4 +1,4 @@
-# luxarch:logging-contract asset v2 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit logging-contract`.
+# luxarch:logging-contract asset v3 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit logging-contract`.
 """The contract of the logging module's trace-id source, asked of your copy of the module.
 
 Save as `tests/test_logging_contract.py` and set the one EDIT THIS line. `configure_logging(trace_ids=)`
@@ -380,8 +380,11 @@ def test_a_validation_errors_input_never_reaches_a_traceback_line(
     rig: _Rig, kind: str, text: bool
 ) -> None:
     rig.configure(None, text=text)
+    err = _chained(
+        kind
+    )  # outside the `try`: without pydantic its skip must reach pytest
     try:
-        raise _chained(kind)
+        raise err
     except BaseException:
         rig.log.exception("failed")
     (line,) = rig.lines()
@@ -436,6 +439,26 @@ def _in_a_cycle(rig: _Rig, err: Exception) -> None:
     holder: list[object] = [err]
     holder.append(holder)
     rig.log.warning("failures: %s", holder)
+
+
+class _Order:
+    """An ORM-style parent: its items refer back to it, and it keeps the errors of its last save."""
+
+    def __init__(self, errors: object) -> None:
+        self.items: list[_Item] = []
+        self.errors = errors
+
+
+class _Item:
+    def __init__(self, order: _Order) -> None:
+        self.order = order
+        order.items.append(self)
+
+
+def _with_a_backref(rig: _Rig, err: Exception) -> None:
+    order = _Order(_errors_of(err))
+    item = _Item(order)
+    rig.log.warning("order %s (%s)", order, item)
 
 
 def _deep(rig: _Rig, err: Exception) -> None:
@@ -508,6 +531,13 @@ _HANDED: dict[str, Callable[[_Rig, Exception], None]] = {
         "refused: %s", _errors_of(_quoting("custom"))
     ),
     "a list nested twenty deep": _deep,
+    "a dict's values view": lambda r, e: r.log.warning(
+        "rejected fields: %s", {"age": _errors_of(e)[0]}.values()
+    ),
+    "a dict's items view as an extra field": lambda r, e: r.log.warning(
+        "rejected", extra={"fields": {"age": _errors_of(e)[0]}.items()}
+    ),
+    "an object and the child that refers back to it": _with_a_backref,
 }
 
 
@@ -537,7 +567,12 @@ def test_arguments_and_fields_without_a_validation_error_are_written_as_passed(
     rig: _Rig, text: bool
 ) -> None:
     rig.configure(None, text=text)
-    items = [1, {"a": (2, "b")}, {"input": "kept"}]
+    items = [
+        1,
+        {"a": (2, "b")},
+        {"input": "kept"},
+        {"type": "reading", "input": "kept too"},
+    ]
     rig.log.warning(
         "n=%s items=%s error=%s",
         3,
@@ -577,3 +612,163 @@ def test_objects_and_exceptions_without_a_validation_error_are_written_as_passed
     )
     (line,) = rig.lines()
     assert "_RowResult(row=2, error='ok') 404: no such page _Slotted(3, None)" in line
+
+
+class _Linked:
+    """A live client object whose graph points back at itself (a response and its request, a pool
+    and its connections): nothing in it is a validation error."""
+
+    def __init__(self) -> None:
+        self.peer = self
+        self.parts = [self, {"owner": self}]
+
+
+class _ClientError(Exception):
+    """An HTTP or database client error carrying its live response and whatever state it keeps."""
+
+    def __init__(self, text: str, state: object = None) -> None:
+        super().__init__(text)
+        self.response = _Linked()
+        self.state = state
+
+
+class _Device:
+    def __init__(self, n: int) -> None:
+        self.n = n
+
+
+@pytest.mark.parametrize("text", [False, True], ids=["json", "text"])
+def test_an_ordinary_error_whose_graph_has_a_cycle_keeps_its_text(
+    rig: _Rig, text: bool
+) -> None:
+    rig.configure(None, text=text)
+    rig.log.error("HTTP error: %s", _ClientError("503 for /api/devices"))
+    err = _ClientError("write failed: field type conflict")
+    try:
+        raise err
+    except _ClientError:
+        rig.log.exception("InfluxDB write failed")
+    first, second = rig.lines()
+    assert "503 for /api/devices" in first and "withheld" not in first
+    assert "field type conflict" in second and "withheld" not in second
+
+
+def test_an_ordinary_error_past_the_walks_reach_keeps_its_text(rig: _Rig) -> None:
+    """Past the node budget or the depth bound the walk has found nothing: the value is written."""
+    rig.configure(None)
+    wide = _ClientError("too many devices", [_Device(n) for n in range(12_000)])
+    nested: object = _Device(0)
+    for _ in range(24):
+        nested = [nested, _Device(1)]
+    deep = _ClientError("nested state", nested)
+    rig.log.error("failed: %s / %s", wide, deep)
+    (line,) = rig.lines()
+    assert "too many devices" in line and "nested state" in line
+    assert "withheld" not in line
+
+
+def test_a_validation_error_past_the_walks_reach_is_still_withheld(rig: _Rig) -> None:
+    rig.configure(None)
+    err = _validation_error()
+    entries = [dict(e) for _ in range(10_500) for e in _errors_of(err)]
+    wrapped = [_Device(n) for n in range(11_000)] + [_RowResult(1, err)]
+    rig.log.warning("refused: %s", entries)
+    rig.log.warning("rows: %s", wrapped)
+    for line in rig.lines():
+        assert _QUOTED not in line
+
+
+@pytest.mark.parametrize("text", [False, True], ids=["json", "text"])
+def test_values_beside_a_validation_error_are_written_as_passed(
+    rig: _Rig, text: bool
+) -> None:
+    """The walk runs only for an argument that holds a validation error; there, everything else in
+    it is written as passed."""
+    rig.configure(None, text=text)
+    items = [
+        1,
+        {"a": (2, "b")},
+        {"input": "kept"},
+        {"type": "reading", "input": "kept too"},
+    ]
+    batch = [
+        items,
+        ValueError("plain text"),
+        _RowResult(2, "ok"),
+        _Refusal(404, "no such page"),
+        _Slotted(3, None),
+        _validation_error(),
+    ]
+    rig.log.warning("batch: %s", batch)
+    (line,) = rig.lines()
+    assert _QUOTED not in line
+    message = line if text else json.loads(line)["message"]
+    kept = f"[{items!r}, ValueError('plain text'), _RowResult(row=2, error='ok'), "
+    assert f"batch: {kept}" in message, message
+    assert (
+        "_Refusal(), _Slotted(3, None), '<ValidationError: input withheld>']" in message
+    )
+
+
+def test_a_validation_error_beside_a_large_batch_is_withheld(rig: _Rig) -> None:
+    """The search of a call stops at its budget; a batch past it never clears the call."""
+    rig.configure(None)
+    errors = _errors_of(_validation_error())
+    rows = [{"device": n, "reading": float(n)} for n in range(60_000)]
+    rig.log.warning("rejected", extra={"errors": errors, "batch": rows})
+    rig.log.warning("rejected %s of %s", errors, rows)
+    for line in rig.lines():
+        assert _QUOTED not in line
+
+
+def test_two_dict_views_in_one_call_are_each_read(rig: _Rig) -> None:
+    """Each view is read as its own content: a view's items are new tuples every time it is read."""
+    rig.configure(None)
+    rejected = {"signup": _errors_of(_validation_error())}
+    accepted = {"city": "Bern"}
+    rig.log.warning("rejected %s; accepted %s", rejected.items(), accepted.items())
+    form_b = {"form_b": _errors_of(_validation_error())}
+    rig.log.warning("rejected %s / %s", rejected.items(), form_b.items())
+    first, second = rig.lines()
+    assert _QUOTED not in first and "Bern" in first
+    assert _QUOTED not in second and "form_b" in second
+
+
+@dataclasses.dataclass
+class _ImportRow:
+    line: int
+    error: object = None
+
+
+class _ImportFailed(Exception):
+    """An import error that names its row; the row keeps the error it failed with."""
+
+
+@pytest.mark.parametrize("text", [False, True], ids=["json", "text"])
+def test_an_error_and_the_row_that_refers_back_to_it_are_both_withheld(
+    rig: _Rig, text: bool
+) -> None:
+    rig.configure(None, text=text)
+    row = _ImportRow(7)
+    err = _ImportFailed(row, _validation_error())
+    row.error = err
+    rig.log.warning("import failed: %s; row %s", err, row)
+    rig.log.warning("import failed", extra={"error": err, "row": row})
+    for line in rig.lines():
+        assert _QUOTED not in line
+
+
+@pytest.mark.parametrize("text", [False, True], ids=["json", "text"])
+def test_a_client_error_beside_a_validation_error_keeps_its_text(
+    rig: _Rig, text: bool
+) -> None:
+    """Each argument and field is judged on its own: a validation error in one withholds nothing
+    in the others."""
+    rig.configure(None, text=text)
+    errors = _errors_of(_validation_error())
+    rig.log.warning(
+        "sync failed: %s; local: %s", _ClientError("503 for /api/sync"), errors
+    )
+    (line,) = rig.lines()
+    assert _QUOTED not in line
+    assert "503 for /api/sync" in line
