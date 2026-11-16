@@ -68,17 +68,13 @@ echo "release gates at $(git -C "$REPO" rev-parse --short "$REF")"
 
 fresh; run "clean tree publishes" publish-sha $REG; expect_pushed
 
-fresh; mkdir -p "$T/repo/app/build"; printf 'TOKEN = "not-a-real-one"\n' > "$T/repo/app/build/leak.py"
-run "a gitignored module under app/ is refused" publish-sha $REG
-expect_refused "gitignored Python modules under app/ reach the build context"
+fresh; printf 'KIDDE_COLLECTOR_KIDDE_PASSWORD=not-a-real-one\n' > "$T/repo/app/.env.local"
+run "a gitignored file under app/ is refused" publish-sha $REG
+expect_refused "gitignored files sit in the build context"
 run "make -i cannot ignore a failing gate" -i publish-sha $REG
 expect_refused "make -i ignores a failing release gate"
 (export MAKEFLAGS=i; run "an inherited MAKEFLAGS=i cannot ignore a failing gate" publish-sha $REG
  expect_refused "make -i ignores a failing release gate"; exit $fails) || fails=$?
-
-# A gitignored file .dockerignore keeps out (here an env file) is not refused: it cannot ship.
-fresh; printf 'KIDDE_COLLECTOR_KIDDE_PASSWORD=not-a-real-one\n' > "$T/repo/app/.env.local"
-run "a gitignored file the build context excludes is not refused" publish-sha $REG; expect_pushed
 
 # .dockerignore: that same file never enters the build context (real docker, local output only).
 mkdir -p "$T/ctx-out"
