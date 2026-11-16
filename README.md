@@ -59,13 +59,13 @@ Dependencies are managed with **Poetry** (`pyproject.toml` + committed `poetry.l
 
 Distinguished by source (real vs fake Kidde) and observability (external vs bundled). All `.yml`, short-form volumes, on the **bridge network** (Kidde is a cloud API — no host networking). Compose never builds except the fake-Kidde service in demo/e2e.
 
-| Stack          | how it runs                           | source          | InfluxDB/Grafana          | make                                       |
-| -------------- | ------------------------------------- | --------------- | ------------------------- | ------------------------------------------ |
-| collector-only | `--env-file .env.dev` (no profile)    | real            | external (yours)          | `docker compose --env-file .env.dev up -d` |
-| prod           | `--env-file .env.prod` (no profile)   | real            | external (yours)          | `make prod-*`                              |
-| dev            | `--env-file .env.demo --profile dev`  | real            | bundled, auto-provisioned | `make dev-up`                              |
-| demo           | `--env-file .env.demo --profile demo` | fake (emulator) | bundled, auto-provisioned | `make demo-up`                             |
-| test           | `--env-file .env.e2e --profile e2e`   | fake            | bundled, no Grafana       | `make test-e2e`                            |
+| Stack          | how it runs                                                                | source          | InfluxDB/Grafana          | make                                       |
+| -------------- | -------------------------------------------------------------------------- | --------------- | ------------------------- | ------------------------------------------ |
+| collector-only | `--env-file .env.dev` (no profile)                                         | real            | external (yours)          | `docker compose --env-file .env.dev up -d` |
+| prod           | `--env-file .env.prod` (no profile)                                        | real            | external (yours)          | `make prod-*`                              |
+| dev            | `KIDDE_LOCAL_ENV_FILE=.env.dev.local … --env-file .env.demo --profile dev` | real            | bundled, auto-provisioned | `make dev-up`                              |
+| demo           | `--env-file .env.demo --profile demo`                                      | fake (emulator) | bundled, auto-provisioned | `make demo-up`                             |
+| test           | `--env-file .env.e2e --profile e2e`                                        | fake            | bundled, no Grafana       | `make test-e2e`                            |
 
 ## Configuration
 
