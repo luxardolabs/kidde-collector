@@ -201,9 +201,10 @@ DEV_HOST := devhost
 # ── Release gates this repo adds IN FRONT of the image block (prerequisites, never recipe edits) ─
 # The lock audit gates every push: the block's candidate scan only refuses fixable HIGH/CRITICAL in
 # the image, and a MEDIUM CVE in a locked package (multidict CVE-2026-104874 in 2026.10.0) passes it.
-# `git status --porcelain` does not list gitignored files, but the build context holds them: a
-# session-cookie dump under app/ would pass the block's dirty-tree check and ship. So refuse any
-# ignored file under app/ (what the Dockerfile COPYs) except the caches .dockerignore drops, and
+# `git status --porcelain` does not list gitignored files, but the build context holds what
+# .dockerignore lets in: `app/**/*.py`, minus __pycache__/, output/ and .git/. A gitignored module
+# there (app/build/x.py, app/venv/…) passes the block's dirty-tree check and ships. So refuse any
+# such ignored module under app/ (what the Dockerfile COPYs), and
 # any tracked file git has been told to stop looking at (skip-worktree / assume-unchanged): its
 # local edit is invisible to `git status` but still in the build context.
 PUBLISH_GOALS := release publish-sha release-public dev-deploy
@@ -225,11 +226,11 @@ endif
 release-context-clean:
 	@ign=$$(git ls-files --others --ignored --exclude-standard -- app) || { \
 	  echo "REFUSING: git ls-files failed, so nothing proves the build context is clean"; exit 1; }; \
-	ign=$$(printf '%s\n' "$$ign" | grep -vE '^$$|(^|/)__pycache__/|\.py[cod]$$|(^|/)\.DS_Store$$' || true); \
+	ign=$$(printf '%s\n' "$$ign" | grep -E '\.py$$' | grep -vE '(^|/)(__pycache__|output|\.git)/' || true); \
 	if [ -n "$$ign" ]; then \
-	  echo "REFUSING: gitignored files sit in the build context and would ship:"; \
+	  echo "REFUSING: gitignored Python modules under app/ reach the build context and would ship:"; \
 	  printf '%s\n' "$$ign" | sed 's/^/    /'; \
-	  echo "Remove them (or add them to .dockerignore) before publishing."; \
+	  echo "Remove them before publishing."; \
 	  exit 1; \
 	fi; \
 	flags=$$(git ls-files -v) || { \
