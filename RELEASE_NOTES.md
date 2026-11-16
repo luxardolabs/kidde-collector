@@ -6,6 +6,7 @@ These describe what someone running this collector would actually notice. For th
 
 | Version                                     | Highlights                                                                  |
 | ------------------------------------------- | --------------------------------------------------------------------------- |
+| [2026.11.2](app/release_notes/2026.11.2.md) | Demo dashboards fill in                                                     |
 | [2026.11.1](app/release_notes/2026.11.1.md) | Leaner image, plain commands for running it yourself                        |
 | [2026.11.0](app/release_notes/2026.11.0.md) | Security update, built-in restart behaviour, cleaner screenshots            |
 | [2026.10.3](app/release_notes/2026.10.3.md) | Security update, honest health check, gentler on your Kidde account         |

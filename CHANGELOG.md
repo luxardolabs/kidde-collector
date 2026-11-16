@@ -6,6 +6,7 @@ This is the internal record: what changed, why, the issue IDs it closed, and any
 
 | Version                                   | Notes                                                                                                    |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| [2026.11.2](app/change_logs/2026.11.2.md) | Demo emulator matches a real account, guards to 0.368.0, coverage back over its floor                    |
 | [2026.11.1](app/change_logs/2026.11.1.md) | Dev stack on the dev host with its own InfluxDB + Grafana, include-list build context, guards to 0.367.0 |
 | [2026.11.0](app/change_logs/2026.11.0.md) | apt HIGH CVE cleared, restart/OOM in compose.yml, README de-personalised, guards to 0.344.0              |
 | [2026.10.3](app/change_logs/2026.10.3.md) | Adversarial audit (9 fixes), health requires a landed write, 1 CRITICAL + 3 HIGH CVEs cleared            |
