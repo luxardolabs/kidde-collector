@@ -105,8 +105,8 @@ bc=$(cd "$T/repo" && make -n --no-print-directory build-local $REG 2>/dev/null |
 tag=$(cd "$T/repo" && make --no-print-directory version $REG 2>/dev/null | grep -oE 'sha-[0-9a-z]+' | head -1 | cut -d- -f2)
 if [ -n "$bc" ] && [ "$bc" = "$tag" ]; then echo "PASS  $label ($bc)"; else echo "FAIL  $label: BUILD_COMMIT=$bc, tag sha-$tag"; fails=$((fails + 1)); fi
 
-# VERSION resolves in a checkout whose path holds a single quote: from the VERSION file, and from
-# the git fallback when that file is missing.
+# VERSION resolves from the VERSION file in a checkout whose path holds a single quote, and make
+# refuses to run at all when that file is missing or empty.
 QDIR="$T/it's here"
 rm -rf "$QDIR"; git clone -q "$REPO" "$QDIR" && git -C "$QDIR" checkout -q "$REF" || exit 2
 want=$(cat "$QDIR/VERSION")
@@ -114,14 +114,15 @@ got=$(make --no-print-directory -C "$QDIR" --eval 'print-version: ; @echo "[$(VE
 label="VERSION reads the file under a quoted checkout path"
 if [ "$got" = "[$want]" ]; then echo "PASS  $label ($want)"; else echo "FAIL  $label: got $got, want [$want]"; fails=$((fails + 1)); fi
 rm -f "$QDIR/VERSION"
-want=$(git -C "$QDIR" describe --tags --always)
-# Git treats the checkout as another user's, and no config from the system, the user or the
-# caller's environment trusts it, so git describes it only through the Makefile's own
-# `safe.directory`.
-label="VERSION falls back to git describe under a quoted checkout path owned by another user"
-got=$(env -u GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT=0 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TEST_ASSUME_DIFFERENT_OWNER=1 \
-  make --no-print-directory -C "$QDIR" --eval 'print-version: ; @echo "[$(VERSION)]"' print-version 2>/dev/null)
-if [ "$got" = "[$want]" ]; then echo "PASS  $label ($want)"; else echo "FAIL  $label: got $got, want [$want]"; fails=$((fails + 1)); fi
+label="make refuses when the VERSION file is missing"
+out=$(make --no-print-directory -C "$QDIR" --eval 'print-version: ; @echo "[$(VERSION)]"' print-version 2>&1); rc=$?
+if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'VERSION file is missing or empty' && ! printf '%s' "$out" | grep -q '^\['; then echo "PASS  $label"
+else echo "FAIL  $label: rc=$rc, output: $out"; fails=$((fails + 1)); fi
+printf '\n' > "$QDIR/VERSION"
+label="make refuses when the VERSION file is empty"
+out=$(make --no-print-directory -C "$QDIR" --eval 'print-version: ; @echo "[$(VERSION)]"' print-version 2>&1); rc=$?
+if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'VERSION file is missing or empty'; then echo "PASS  $label"
+else echo "FAIL  $label: rc=$rc, output: $out"; fails=$((fails + 1)); fi
 
 if [ "$fails" -eq 0 ]; then echo "release gates: all passed"; else echo "release gates: $fails FAILED"; fi
 exit $((fails > 0))

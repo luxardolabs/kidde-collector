@@ -6,7 +6,11 @@
 # for a single-service collector (no db/redis/nginx/css).
 # =============================================================================
 
-VERSION := $(shell cat VERSION 2>/dev/null || git -c safe.directory='$(subst ','\'',$(CURDIR))' describe --tags --always 2>/dev/null || echo "0.0.0-dev")
+# VERSION is the tracked single version source: a checkout without it versions nothing.
+VERSION := $(strip $(shell cat VERSION 2>/dev/null))
+ifeq ($(VERSION),)
+$(error REFUSING: the VERSION file is missing or empty. It is the tracked single version source; restore it with git checkout -- VERSION)
+endif
 TIMESTAMP := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # Private registry host stays OUT of this public repo — set it in gitignored Makefile.local
