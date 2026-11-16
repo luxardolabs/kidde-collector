@@ -6,10 +6,15 @@
 # for a single-service collector (no db/redis/nginx/css).
 # =============================================================================
 
-# VERSION is the tracked single version source: a checkout without it versions nothing.
-VERSION := $(strip $(shell cat VERSION 2>/dev/null))
+# VERSION is the tracked single version source: a checkout without it versions nothing. `override`
+# keeps Makefile.local, the command line and `make -e` from replacing it, and the value must be the
+# CalVer YYYY.MM.MICRO an app releases as (repo.app_version_calver).
+override VERSION := $(strip $(shell cat VERSION 2>/dev/null))
 ifeq ($(VERSION),)
-$(error REFUSING: the VERSION file is missing or empty. It is the tracked single version source; restore it with git checkout -- VERSION)
+$(error REFUSING: no VERSION file in $(CURDIR), or it is empty. It is the tracked single version source: run make from the repository root (make -C <repo>), or restore it with git checkout -- VERSION)
+endif
+ifeq ($(shell printf '%s\n' '$(subst ','\'',$(VERSION))' | grep -Exc '[0-9]{4}\.[0-9]{2}\.[0-9]+'),0)
+$(error REFUSING: VERSION is "$(VERSION)", not a CalVer YYYY.MM.MICRO such as 2026.11.0. Fix the VERSION file)
 endif
 TIMESTAMP := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 

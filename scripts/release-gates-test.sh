@@ -116,13 +116,26 @@ if [ "$got" = "[$want]" ]; then echo "PASS  $label ($want)"; else echo "FAIL  $l
 rm -f "$QDIR/VERSION"
 label="make refuses when the VERSION file is missing"
 out=$(make --no-print-directory -C "$QDIR" --eval 'print-version: ; @echo "[$(VERSION)]"' print-version 2>&1); rc=$?
-if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'VERSION file is missing or empty' && ! printf '%s' "$out" | grep -q '^\['; then echo "PASS  $label"
+if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'no VERSION file' && ! printf '%s' "$out" | grep -q '^\['; then echo "PASS  $label"
 else echo "FAIL  $label: rc=$rc, output: $out"; fails=$((fails + 1)); fi
 printf '\n' > "$QDIR/VERSION"
 label="make refuses when the VERSION file is empty"
 out=$(make --no-print-directory -C "$QDIR" --eval 'print-version: ; @echo "[$(VERSION)]"' print-version 2>&1); rc=$?
-if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'VERSION file is missing or empty'; then echo "PASS  $label"
+if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'no VERSION file'; then echo "PASS  $label"
 else echo "FAIL  $label: rc=$rc, output: $out"; fails=$((fails + 1)); fi
+for bad in 'v2026.11.0' "$(printf '\357\273\2772026.11.0')" '2026.11'; do
+  printf '%s\n' "$bad" > "$QDIR/VERSION"
+  label="make refuses a VERSION that is not CalVer ($(printf '%s' "$bad" | od -An -c | tr -s ' '))"
+  out=$(make --no-print-directory -C "$QDIR" --eval 'print-version: ; @echo "[$(VERSION)]"' print-version 2>&1); rc=$?
+  if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -q 'not a CalVer'; then echo "PASS  $label"
+  else echo "FAIL  $label: rc=$rc, output: $out"; fails=$((fails + 1)); fi
+done
+git -C "$QDIR" checkout -q -- VERSION
+printf 'VERSION :=\n' > "$QDIR/Makefile.local"
+label="Makefile.local cannot replace VERSION"
+got=$(make --no-print-directory -C "$QDIR" --eval 'print-version: ; @echo "[$(VERSION)]"' print-version 2>/dev/null)
+if [ "$got" = "[$want]" ]; then echo "PASS  $label"; else echo "FAIL  $label: got $got, want [$want]"; fails=$((fails + 1)); fi
+rm -f "$QDIR/Makefile.local"
 
 if [ "$fails" -eq 0 ]; then echo "release gates: all passed"; else echo "release gates: $fails FAILED"; fi
 exit $((fails > 0))
