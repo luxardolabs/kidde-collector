@@ -18,10 +18,15 @@
 **/*.py[cod]
 **/.git
 **/.env
+**/.env/**
 **/.env.*
+**/.env.*/**
 **/*.env
+**/*.env/**
 **/*.env.*
+**/*.env.*/**
 **/.envrc
+**/.envrc/**
 **/*credentials.json
 **/*.pem
 **/*.key
