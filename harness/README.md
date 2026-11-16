@@ -11,7 +11,7 @@ One HTTP port (default `8080`) serves the endpoints the collector polls:
 | `GET`  | `/api/v4/location/{id}/device` | `[ device, … ]`                                 |
 | `GET`  | `/api/v4/location/{id}/event`  | `{ "events": [] }`                              |
 
-The device JSON mirrors the real API: scalar attributes (`smoke_alarm`, `co_level`, `temperature`, `battery_state`, …) plus the nested air-quality panel (`iaq_temperature`, `humidity`, `hpa`, `tvoc`, `iaq`, `co2`), each a `{value, status, Unit}` object. Readings wobble over time so the dashboards move. Two of the fake devices are WiFi IAQ detectors (full panel); one is a plain smoke/CO detector (scalar fields only) so both storage paths are covered.
+The device JSON mirrors the real API: scalar attributes (`smoke_alarm`, `co_level`, `temperature`, `battery_state`, `ap_rssi`, `last_seen`, `end_of_life_status`, …) plus the nested air-quality panel (`iaq_temperature`, `humidity`, `hpa`, `tvoc`, `iaq`, `co2`), each a `{value, status, Unit}` object. Readings wobble over time so the dashboards move. The fake home is two WiFi smoke/IAQ detectors, which also report a last self-test, and one WiFi CO detector, all three reporting the full air-quality panel as real ones do. A device with no air-quality metrics is covered by the unit tests.
 
 ## Point the collector at it
 

@@ -27,6 +27,7 @@ import json
 import math
 import os
 import time
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from urllib.parse import urlparse
@@ -37,14 +38,33 @@ LOCATION_LABEL = os.getenv("KIDDE_FAKE_LOCATION_LABEL", "Fake Home")
 
 _T0 = time.time()
 
-# The simulated home: WiFi IAQ detectors that report the full air-quality panel, plus a
-# plain smoke/CO detector with no environmental metrics — so the collector exercises
-# both the nested-metric path and the scalar-only path.
+
+@dataclass(frozen=True)
+class FakeDevice:
+    id: int
+    serial: str
+    label: str
+    model: str
+    rssi: int
+
+
+# The simulated home, shaped like a real account: two WiFi smoke/IAQ detectors and a WiFi
+# CO detector. Every model reports the full air-quality panel; only the smoke/IAQ
+# detectors report a last self-test. (The collector's scalar-only path, a device with no
+# air-quality metrics, is covered by the unit tests.)
 DEVICES = [
-    {"id": 553549, "serial": "001372CBA9BD", "label": "Basement", "iaq": True},
-    {"id": 553550, "serial": "001372CBA9C0", "label": "Living Room", "iaq": True},
-    {"id": 553551, "serial": "001372CBA9C4", "label": "Hallway", "iaq": False},
+    FakeDevice(553549, "001372CBA9BD", "Basement", "wifiiaqdetector", -59),
+    FakeDevice(553550, "001372CBA9C0", "Living Room", "wifiiaqdetector", -48),
+    FakeDevice(553551, "001372CBA9C4", "Hallway", "cowifidetector", -66),
 ]
+
+# The last self-test the smoke/IAQ detectors report: a fixed past moment, as a real
+# detector's stays until its next test.
+LAST_TEST_TIME = "2026-01-28T18:52:54Z"
+
+
+def _iso_now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def _wobble(base: float, amp: float, phase: float, t: float) -> float:
@@ -93,28 +113,39 @@ def device_list() -> list[dict[str, Any]]:
     t = time.time() - _T0
     devices = []
     for i, d in enumerate(DEVICES):
+        smoke = d.model == "wifiiaqdetector"
         device = {
-            "id": d["id"],
-            "serial_number": d["serial"],
-            "model": "wifiiaqdetector" if d["iaq"] else "smokecodetector",
+            "id": d.id,
+            "serial_number": d.serial,
+            "model": d.model,
             "location_id": LOCATION_ID,
-            "label": d["label"],
+            "label": d.label,
             "lost": False,
-            "capabilities": ["smoke", "co", "temperature"]
-            + (["iaq"] if d["iaq"] else []),
-            "smoke_alarm": False,
+            "offline": False,
+            "capabilities": (["smoke", "temperature"] if smoke else []) + ["co", "iaq"],
             "co_alarm": False,
-            "smoke_level": int(_wobble(3, 2, i, t)),
             "co_level": 0,
             "battery_state": "ok",
             "batt_volt": 0,
             "life": 514,
-            "temperature": round(_wobble(78, 3, i, t)),
-            "temperature_f": round(_wobble(78, 3, i, t)),
-            "overall_iaq_status": "Moderate" if d["iaq"] else "Normal",
+            "ap_rssi": int(_wobble(d.rssi, 3, i, t)),
+            "last_seen": _iso_now(),
+            "end_of_life_status": 1,
+            "overall_iaq_status": "Moderate",
         }
-        if d["iaq"]:
-            device.update(_iaq_block(t))
+        if smoke:
+            device.update(
+                {
+                    "smoke_alarm": False,
+                    "smoke_level": int(_wobble(3, 2, i, t)),
+                    "temperature": round(_wobble(78, 3, i, t)),
+                    "temperature_f": round(_wobble(78, 3, i, t)),
+                    "last_test_time": LAST_TEST_TIME,
+                }
+            )
+        else:
+            device.update({"end_of_life_alarm": False, "battery_level": 100})
+        device.update(_iaq_block(t))
         devices.append(device)
     return devices
 

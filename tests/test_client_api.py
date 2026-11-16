@@ -171,6 +171,23 @@ class TestGetData:
         assert iaq_devices, "the emulator must expose at least one IAQ device"
         assert "value" in iaq_devices[0]["co2"]
 
+    async def test_every_device_fills_what_the_dashboards_read(self, endpoints, http):
+        """The demo dashboards read these for every device, as a real account sends them:
+        signal strength, last seen, end-of-life and the air-quality panel. A device the
+        emulator leaves one out of shows a blank or "No data" cell in the demo."""
+        client = await KiddeClient.from_login(http, "u", "p")
+        data = await client.get_data(get_devices=True, get_events=False)
+        assert data.devices is not None
+        for device in data.devices.values():
+            label = device["label"]
+            assert isinstance(device["ap_rssi"], int) and device["ap_rssi"] < 0, label
+            assert device["last_seen"].endswith("Z"), label
+            assert "end_of_life_status" in device, label
+            for metric in ("iaq_temperature", "humidity", "hpa", "tvoc", "iaq", "co2"):
+                assert "value" in device[metric], (label, metric)
+        smoke = [d for d in data.devices.values() if d["model"] == "wifiiaqdetector"]
+        assert smoke and all(d["last_test_time"].endswith("Z") for d in smoke)
+
 
 class TestRequestAuth:
     async def test_401_from_a_data_call_raises_auth_error(self, endpoints, http):
