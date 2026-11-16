@@ -27,9 +27,11 @@ services:
     container_name: kidde-collector
     env_file:
       - ${ENV_FILE:?set ENV_FILE to this stack's .env.<env>}
-      # Your REAL Kidde account, for the dev stack only. Gitignored and optional —
-      # see .env.dev.local.example. Later file wins on shared keys.
-      - path: .env.dev.local
+      # Your REAL Kidde account, for the bundled dev stack only (`make dev-*` sets
+      # KIDDE_LOCAL_ENV_FILE=.env.dev.local; see .env.dev.local.example). Later file wins
+      # on shared keys, so no other stack names it: prod, demo, e2e and .env.dev run as
+      # their own env file says.
+      - path: ${KIDDE_LOCAL_ENV_FILE:-/dev/null}
         required: false
     restart: unless-stopped
     oom_score_adj: -500

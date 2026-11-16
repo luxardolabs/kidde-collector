@@ -99,7 +99,7 @@ POETRY_PIP := python -m venv /tmp/v && /tmp/v/bin/pip install -q --root-user-act
 #   --profile e2e    hardware-free e2e: fake Kidde + bundled InfluxDB (.env.e2e)
 DC      := docker compose
 PROD_DC := $(DC) --env-file .env.prod
-DEV_DC  := $(DC) --env-file .env.demo --profile dev
+DEV_DC  := KIDDE_LOCAL_ENV_FILE=.env.dev.local $(DC) --env-file .env.demo --profile dev
 DEMO_DC := $(DC) --env-file .env.demo --profile demo
 E2E_DC  := $(DC) --env-file .env.e2e --profile e2e
 
