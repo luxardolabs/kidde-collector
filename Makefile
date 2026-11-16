@@ -69,7 +69,7 @@ RUFF_VERSION ?= 0.15.22
 
 # Architecture guard (luxarch) — pinned; registry host comes from Makefile.local (see above).
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.367.0
+LUXARCH_VERSION  := 0.368.0
 
 # Code-style + type standard (luxlint) — pinned; registry host comes from Makefile.local.
 # luxlint ships from the PRIVATE registry only (never GHCR), so the host stays out of this
@@ -1991,7 +1991,7 @@ SMOKE_STATIC_PATH ?=
 # The collector's entry point is app.main, which the default `app/*_main.py` glob does not match.
 SMOKE_ENTRY_MODULES ?= app.main
 
-# luxarch:smoke asset v13 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit smoke`.
+# luxarch:smoke asset v14 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit smoke`.
 # ── Smoke: probe the DEPLOYED stack from outside, after every dev deploy ──────────────────────────
 # Emitted by `luxarch --emit smoke`; paste below the image block. `make test` runs the app in-process
 # against its test stack, so it cannot see the proxy, the server, the production image or an entry
@@ -2045,6 +2045,9 @@ SMOKE_RUN_OPTS ?=
 # Setting: extra curl options (e.g. --cacert <file> for a private CA) -------------------------
 SMOKE_CURL_OPTS ?=
 
+# v14: with the browser-smoke block pasted below this one (luxarch --emit browser-smoke), `make smoke`
+# runs `smoke-browser` last, once every probe above has passed, so a page that breaks in a browser
+# fails the deploy. Without that block (opt-in) the line does nothing.
 # v11: the key reaches curl on its standard input, never its command line, where any user on the
 # host could read it for as long as curl runs (a stream holds it open). The signed-in probe wants
 # SMOKE_AUTH_TYPE as its media type (any case) and a whole body, or be an event stream still open
@@ -2184,6 +2187,7 @@ smoke: ## Probe the deployed dev stack: build commit, static asset, forged Host 
 	fi; \
 	[ "$$n" -ne 0 ] || echo "NOT RUN  entry points: no module under $(SMOKE_SCRIPTS_DIR) and no SMOKE_ENTRY_MODULES"; \
 	exit $$fail
+	@$(if $(value smoke_browser_block),$(MAKE) --no-print-directory smoke-browser,:)
 
 docker-inspect: ## Inspect the released image's metadata
 	@docker inspect $(VERSION_IMAGE) --format='Version: {{index .Config.Labels "org.opencontainers.image.version"}}' 2>/dev/null || echo "Image not pulled"
