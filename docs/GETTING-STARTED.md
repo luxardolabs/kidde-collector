@@ -46,7 +46,9 @@ If you already run InfluxDB and Grafana, run just the collector and point it at 
    ```bash
    cp .env.example .env.dev
    # edit .env.dev — your Kidde creds + your InfluxDB URL / org / bucket / token,
-   # and REGISTRY= (empty) + TAG=local to run the image you build below
+   # REGISTRY= (empty) + TAG=local to run the image you build below, and
+   # OUTPUT_VOLUME=kidde_collector_output (a named volume the container can write;
+   # a host path must exist and be writable by uid 1000)
    ```
 1. Start the collector:
    ```bash

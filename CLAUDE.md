@@ -119,13 +119,13 @@ One measurement, `kidde_collector_device`:
 
 Distinguished by source (real vs fake Kidde) and observability (external vs bundled). There is **one** `compose.yml` (`repo.compose_conventions`): stacks differ by compose `profiles:`, environments by `.env.<env>`. Everything runs on the **bridge network** (Kidde is a cloud API — no host networking), and **compose never builds** — `make build-local` and `make harness-build` build the images outside compose and compose only runs the tag.
 
-| Stack          | how it runs                           | source          | InfluxDB/Grafana          | make                                                                             |
-| -------------- | ------------------------------------- | --------------- | ------------------------- | -------------------------------------------------------------------------------- |
-| collector-only | `--env-file .env.dev` (no profile)    | real            | external (yours)          | `make dev-deploy`; `make up`/`down`/`logs`/`ps`/`shell` drive it on the dev host |
-| prod           | `--env-file .env.prod` (no profile)   | real            | external (yours)          | `make prod-*`                                                                    |
-| dev            | `--env-file .env.demo --profile dev`  | real            | bundled, auto-provisioned | `make dev-up`                                                                    |
-| demo           | `--env-file .env.demo --profile demo` | fake (emulator) | bundled, auto-provisioned | `make demo-up`                                                                   |
-| test           | `--env-file .env.e2e --profile e2e`   | fake            | bundled, no Grafana       | `make test-e2e`                                                                  |
+| Stack          | how it runs                           | source          | InfluxDB/Grafana          | make                                                                                               |
+| -------------- | ------------------------------------- | --------------- | ------------------------- | -------------------------------------------------------------------------------------------------- |
+| collector-only | `--env-file .env.dev` (no profile)    | real            | external (yours)          | `make dev-deploy` / `dev-pin` on the dev host; by hand: `docker compose --env-file .env.dev up -d` |
+| prod           | `--env-file .env.prod` (no profile)   | real            | external (yours)          | `make prod-*`                                                                                      |
+| dev            | `--env-file .env.demo --profile dev`  | real            | bundled, auto-provisioned | `make dev-up`                                                                                      |
+| demo           | `--env-file .env.demo --profile demo` | fake (emulator) | bundled, auto-provisioned | `make demo-up`                                                                                     |
+| test           | `--env-file .env.e2e --profile e2e`   | fake            | bundled, no Grafana       | `make test-e2e`                                                                                    |
 
 - Bundled `influxdb:2.7` + Grafana are dev/demo/test only. InfluxQL dashboards need a DBRP mapping (`ops/influxdb/init-dbrp.sh`); Grafana is provisioned via `grafana/provisioning/` (datasource pinned uid `kidde_influxdb`; dashboards from `grafana/shared-local/`, using the `${data_source}` picker var). The dashboards use only core panels — no plugins to install.
 - **Emulator**: `harness/fake_kidde.py` — pure-stdlib Kidde cloud fake (cookie-session login + location/device/event REST). Point the collector at it with `KIDDE_COLLECTOR_API_BASE_URL`. See `harness/README.md`.

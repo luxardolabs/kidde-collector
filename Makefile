@@ -89,7 +89,6 @@ POETRY_PIP := python -m venv /tmp/v && /tmp/v/bin/pip install -q --root-user-act
 #   --profile demo   fake Kidde endpoint + bundled InfluxDB/Grafana (.env.demo)
 #   --profile e2e    hardware-free e2e: fake Kidde + bundled InfluxDB (.env.e2e)
 DC      := docker compose
-RUN_DC  := $(DC) --env-file .env.dev
 PROD_DC := $(DC) --env-file .env.prod
 DEV_DC  := $(DC) --env-file .env.demo --profile dev
 DEMO_DC := $(DC) --env-file .env.demo --profile demo
@@ -105,7 +104,6 @@ PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
 .PHONY: help version \
         build-local publish-sha release release-context-clean buildx-setup \
         dev-deploy dev-pin smoke docker-inspect docker-clean \
-        up down restart logs ps shell \
         dev-up dev-down dev-clean dev-logs dev-ps dev-shell \
         prod-up prod-down prod-restart prod-logs prod-ps \
         demo-up demo-down demo-clean demo-logs demo-ps \
@@ -2174,37 +2172,6 @@ docker-inspect: ## Inspect the released image's metadata
 
 docker-clean: ## Remove local image tags (:sha-<commit>, :dev alias, :$(VERSION), test image)
 	docker rmi $(SHA_IMAGE) $(DEV_ALIAS) $(VERSION_IMAGE) $(TEST_IMAGE) 2>/dev/null || true
-
-##@ Collector-only — plug into your existing InfluxDB/Grafana (compose.yml, .env.dev)
-
-# The collector-only lane is the dev stack, and it runs where `make dev-deploy` puts it: on DEV_HOST.
-# These targets drive that same daemon, so `make up` never starts a second collector on this machine
-# beside it on one Kidde account and one output directory (a 403 in either would clear the other's
-# session, and either one's heartbeat would keep the other "healthy").
-# `make up` starts it through dev-pin, so it gets the same refusals: the committed DEV_HOST only, the
-# main checkout only, the dev host proven to read this directory and env file. The others reach the
-# daemon the same way dev-pin does (`local` is this shell's docker).
-down restart logs ps shell: private export DOCKER_HOST = $(if $(filter-out local,$(IB_DEV_HOST)),ssh://$(IB_DEV_HOST),$(IB_AMBIENT_DOCKER_HOST))
-
-up: ## Start the dev stack on the dev host at .env.dev's pinned TAG (make dev-deploy builds, pins and starts it)
-	@t=$$(sed -n 's/^TAG=//p' .env.dev 2>/dev/null | tail -n 1); \
-	[ -n "$$t" ] || { echo "REFUSING: .env.dev has no TAG= line; run make dev-deploy, or make dev-pin TAG=<a published tag>"; exit 1; }; \
-	$(MAKE) --no-print-directory dev-pin TAG="$$t"
-
-down: ## Stop the collector
-	$(RUN_DC) down
-
-restart: ## Restart the collector
-	$(RUN_DC) restart
-
-logs: ## Follow collector logs
-	$(RUN_DC) logs -f
-
-ps: ## Collector status
-	$(RUN_DC) ps
-
-shell: ## Shell into the collector container
-	$(RUN_DC) exec kidde-collector /bin/bash
 
 ##@ Dev — full LOCAL stack (your real Kidde account + bundled InfluxDB + Grafana)
 
