@@ -41,7 +41,7 @@ def test_the_dev_grafana_is_served_by_name_on_the_edge() -> None:
     assert "container_name: kidde_dev_grafana" in service
     assert re.search(
         r"^    networks:\n      default: \{\}\n(?:      #.*\n)*      dev-edge:\n"
-        r"        ipv4_address: 172\.30\.0\.16$",
+        r"        ipv4_address: 172\.30\.0\.17$",
         service + "\n",
         re.M,
     )
@@ -85,6 +85,14 @@ def test_a_refused_dev_grafana_fails_the_deploy() -> None:
         service,
         re.M,
     )
+    assert re.search(r"^      start_period: 120s$", service, re.M)
+
+
+def test_the_dev_grafanas_address_is_no_other_open_claim() -> None:
+    """172.30.0.16 is taken by another repo's dev front; two containers pinned at one
+    address on dev-edge make whichever starts second fail, and the edge then serves the
+    first under both names."""
+    assert "172.30.0.16" not in COMPOSE
 
 
 def test_a_changed_guard_or_provisioning_recreates_the_dev_grafana() -> None:

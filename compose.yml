@@ -19,7 +19,7 @@ name: ${COMPOSE_NAME:-kidde-collector}
 # THE DEV STACK RUNS ON THE DEV HOST (`DEV_HOST` in the Makefile; FLEET-BUILD-DEPLOY-STANDARD,
 # "The dev host"): `make dev-deploy` / `make dev-pin` start the collector plus the `devhost`
 # profile's own InfluxDB and Grafana, and publish no host port. That Grafana joins the dev host's
-# `dev-edge` network at its pinned address (172.30.0.16), where the edge serves it by its dev name.
+# `dev-edge` network at its pinned address (172.30.0.17), where the edge serves it by its dev name.
 #
 # Kidde is a cloud API, so the collector publishes NO port — it reaches OUT to Kidde and OUT
 # to InfluxDB. Only the local Grafana publishes, because a human opens it in a browser.
@@ -171,10 +171,11 @@ services:
     networks:
       default: {}
       # The edge routes by PINNED address on dev-edge, never by name: any container on the
-      # network can claim an alias. 172.30.0.16 is this Grafana's row in the edge's address
-      # table (the edge repo's README, "The dev-edge network and the address table").
+      # network can claim an alias. 172.30.0.17 is the address this Grafana takes in the edge's
+      # address table (the edge repo's README, "The dev-edge network and the address table"),
+      # where the edge's route to it is added.
       dev-edge:
-        ipv4_address: 172.30.0.16
+        ipv4_address: 172.30.0.17
     # `dev-pin` waits for healthy: a Grafana the guard refused restarts forever, and without a
     # healthcheck the deploy would report green over it.
     healthcheck:
@@ -182,6 +183,8 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+      # A first start migrates a fresh database before the server answers.
+      start_period: 120s
     depends_on:
       kidde_dev_influxdb:
         condition: service_healthy
@@ -226,7 +229,7 @@ services:
 
 networks:
   # The dev host's edge (FLEET-BUILD-DEPLOY-STANDARD, "The dev host"): only the dev Grafana
-  # joins it (pinned at 172.30.0.16), so only the dev host's stack needs it to exist.
+  # joins it (pinned at 172.30.0.17), so only the dev host's stack needs it to exist.
   dev-edge:
     external: true
 
