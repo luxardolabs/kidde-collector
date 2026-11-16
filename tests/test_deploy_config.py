@@ -47,9 +47,9 @@ def test_the_dev_grafana_is_served_by_name_on_the_edge() -> None:
     )
     assert re.search(r"^  dev-edge:\n    external: true$", COMPOSE, re.M)
     toml = (REPO / ".luxarch.toml").read_text()
-    assert re.search(
-        r'^\[dev_host\]\nfront = "app"\nservice = "kidde_dev_grafana"$', toml, re.M
-    )
+    # An ops UI is never the stack's front: the collector serves no HTTP.
+    assert re.search(r'^\[dev_host\]\nfront = "none"\n', toml + "\n", re.M)
+    assert "service =" not in toml.split("[dev_host]", 1)[1].split("\n[", 1)[0]
 
 
 def test_each_grafana_reaches_its_own_stacks_influxdb() -> None:

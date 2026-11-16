@@ -9,12 +9,11 @@ source_client = ["collector/session.py"]   # kidde's long-lived source session
 
 # How the dev stack is reached on the dev host (FLEET-BUILD-DEPLOY-STANDARD, "The dev host"). The
 # dev stack is the collector plus the `devhost` profile's own InfluxDB and Grafana (.env.dev's
-# COMPOSE_PROFILES). The collector listens on nothing; the only thing the edge reaches is that
-# Grafana, pinned on dev-edge, with no front nginx. `make smoke` proves the collector by its own
-# HEALTHCHECK (SMOKE_CONTAINERS), not by a URL.
+# COMPOSE_PROFILES). The stack serves no HTTP, so it has no front: `make smoke` proves the collector
+# by its own HEALTHCHECK (SMOKE_CONTAINERS), not by a URL. The Grafana is an ops UI, not a front:
+# it joins dev-edge at its own pinned address under its own dev name (an infra request).
 [dev_host]
-front = "app"
-service = "kidde_dev_grafana"
+front = "none"
 
 # --- opt-in overlays: decided, not merely absent -------------------------------
 #
