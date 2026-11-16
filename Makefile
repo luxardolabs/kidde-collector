@@ -2188,10 +2188,6 @@ docker-clean: ## Remove local image tags (:sha-<commit>, :dev alias, :$(VERSION)
 ##@ Dev — full LOCAL stack (your real Kidde account + bundled InfluxDB + Grafana)
 
 dev-up: build-local ## Build locally + start the full dev stack (real Kidde account; Grafana http://localhost:3000)
-	@grep -qE '^KIDDE_COLLECTOR_API_BASE_URL=https://' .env.dev.local 2>/dev/null || { \
-	  echo "REFUSING: .env.dev.local is missing or does not point at the real Kidde cloud, so the dev stack would"; \
-	  echo "run against .env.demo's fake endpoint. Copy .env.dev.local.example, or add its line:"; \
-	  echo "  KIDDE_COLLECTOR_API_BASE_URL=https://api.homesafe.kidde.com/api/v4"; exit 1; }
 	$(DEV_DC) up -d
 	@echo "kidde-collector [dev] — Grafana http://localhost:$(or $(GRAFANA_PORT),3000) (admin/admin)"
 
