@@ -8,12 +8,13 @@ app = "app"
 source_client = ["collector/session.py"]   # kidde's long-lived source session
 
 # How the dev stack is reached on the dev host (FLEET-BUILD-DEPLOY-STANDARD, "The dev host"). The
-# dev lane runs the collector alone (DEV_PROFILES empty): it listens on nothing and is reached by
-# nothing, so there is no front proxy and no edge route. Its service is the collector container;
-# `make smoke` proves it by that container's own HEALTHCHECK (SMOKE_CONTAINERS), not by a URL.
+# dev stack is the collector plus the `devhost` profile's own InfluxDB and Grafana (.env.dev's
+# COMPOSE_PROFILES). The collector listens on nothing; the only thing the edge reaches is that
+# Grafana, pinned on dev-edge, with no front nginx. `make smoke` proves the collector by its own
+# HEALTHCHECK (SMOKE_CONTAINERS), not by a URL.
 [dev_host]
 front = "app"
-service = "kidde-collector"
+service = "kidde_dev_grafana"
 
 # --- opt-in overlays: decided, not merely absent -------------------------------
 #

@@ -1,8 +1,9 @@
 # Grafana datasource for the bundled InfluxDB. The dashboards use InfluxQL and select
 # their datasource via the ${data_source} picker variable, which resolves to the
 # default datasource — so this one is marked isDefault. Auth to InfluxDB 2.x's
-# v1-compat API is via an Authorization: Token header. Values come from the demo env
-# passed into the Grafana container.
+# v1-compat API is via an Authorization: Token header. Values come from the env compose
+# passes into the Grafana container: INFLUX_HOST names that stack's InfluxDB service
+# (kidde_influxdb for the local dev and demo stacks, kidde_dev_influxdb on the dev host).
 apiVersion: 1
 
 datasources:
@@ -10,7 +11,7 @@ datasources:
     uid: kidde_influxdb
     type: influxdb
     access: proxy
-    url: http://kidde_influxdb:8086
+    url: http://${INFLUX_HOST}:8086
     isDefault: true
     jsonData:
       version: InfluxQL

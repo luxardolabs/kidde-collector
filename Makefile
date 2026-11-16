@@ -194,8 +194,9 @@ PUBLIC_REGISTRY ?= ghcr.io
 PUBLIC_LATEST   ?= 1
 # Where `make dev-deploy` / `make dev-pin` run the dev stack (FLEET-BUILD-DEPLOY-STANDARD, "The dev
 # host"): an ssh alias every coding machine resolves, which reads this checkout at the same path. The
-# dev lane is the collector alone (DEV_PROFILES empty, .env.dev), writing to your InfluxDB; it serves
-# nothing over HTTP, so `make smoke` probes it by its container's health (SMOKE_CONTAINERS).
+# dev stack is the collector plus the `devhost` profile's InfluxDB and Grafana (COMPOSE_PROFILES in
+# .env.dev; DEV_PROFILES stays empty). The collector serves nothing over HTTP, so `make smoke` probes
+# it by its container's health (SMOKE_CONTAINERS).
 DEV_HOST := devhost
 
 # ── Release gates this repo adds IN FRONT of the image block (prerequisites, never recipe edits) ─
