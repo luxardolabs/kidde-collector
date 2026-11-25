@@ -24,6 +24,12 @@ name: ${COMPOSE_NAME:-kidde-collector}
 # Kidde is a cloud API, so the collector publishes NO port — it reaches OUT to Kidde and OUT
 # to InfluxDB. Only the local Grafana publishes, because a human opens it in a browser.
 
+x-logging: &logging
+  driver: ${LOG_DRIVER:-json-file}
+  options:
+    max-size: "${LOG_MAX_SIZE:-10m}"
+    max-file: "${LOG_MAX_FILE:-5}"
+
 services:
   # The collector runs in EVERY stack, so it carries no profile. What changes between
   # stacks is configuration, and that lives in the `.env.<env>` named by ENV_FILE.
@@ -48,6 +54,7 @@ services:
       GRAFANA_PASSWORD: ""
     restart: unless-stopped
     oom_score_adj: -500
+    logging: *logging
     healthcheck:
       test: ["CMD", "python3", "-m", "app.health.check"]
       interval: 30s
@@ -91,6 +98,7 @@ services:
       retries: 30
     restart: unless-stopped
     oom_score_adj: -500
+    logging: *logging
 
   kidde_grafana:
     profiles: ["dev", "demo"]
@@ -118,6 +126,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     oom_score_adj: -500
+    logging: *logging
 
   # ── profile: devhost ───────────────────────────────────────────────────────
   # The dev stack's own InfluxDB + Grafana on the dev host, with no host port. The collector
@@ -145,6 +154,7 @@ services:
       retries: 30
     restart: unless-stopped
     oom_score_adj: -500
+    logging: *logging
 
   kidde_dev_grafana:
     profiles: ["devhost"]
@@ -190,6 +200,7 @@ services:
         condition: service_healthy
     restart: unless-stopped
     oom_score_adj: -500
+    logging: *logging
 
   # The real InfluxDB the pytest suite writes to (`make test` — the emitted test block starts it in
   # a compose project of its own per run, waits on the healthcheck, and tears it down). Ephemeral
@@ -226,6 +237,7 @@ services:
       KIDDE_FAKE_LOCATION_LABEL: "${KIDDE_FAKE_LOCATION_LABEL:-Demo Home}"
     restart: unless-stopped
     oom_score_adj: -500
+    logging: *logging
 
 networks:
   # The dev host's edge (FLEET-BUILD-DEPLOY-STANDARD, "The dev host"): only the dev Grafana

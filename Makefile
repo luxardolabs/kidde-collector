@@ -69,13 +69,13 @@ RUFF_VERSION ?= 0.15.22
 
 # Architecture guard (luxarch) — pinned; registry host comes from Makefile.local (see above).
 LUXARCH_REGISTRY ?=
-LUXARCH_VERSION  := 0.368.0
+LUXARCH_VERSION  := 0.375.0
 
 # Code-style + type standard (luxlint) — pinned; registry host comes from Makefile.local.
 # luxlint ships from the PRIVATE registry only (never GHCR), so the host stays out of this
 # public repo exactly like LUXARCH_REGISTRY. Without it, `make lint`/`make format` skip.
 LUXLINT_REGISTRY ?=
-LUXLINT_VERSION  := 0.79.1
+LUXLINT_VERSION  := 0.84.0
 LUXLINT_IMAGE    := $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 
 # Dependency-vulnerability guard (luxaudit) — pinned; registry host comes from Makefile.local.
@@ -84,7 +84,7 @@ LUXLINT_IMAGE    := $(LUXLINT_REGISTRY)/luxardolabs/luxlint:$(LUXLINT_VERSION)
 # it drops, no rebuild). Private registry only. Without the host, `make audit` skips. Same
 # out-of-tree pattern as LUXARCH_REGISTRY / LUXLINT_REGISTRY.
 LUXAUDIT_REGISTRY ?=
-LUXAUDIT_VERSION  := 0.18.0
+LUXAUDIT_VERSION  := 0.22.0
 # Empty without the registry, never a hostless `/luxardolabs/…` ref: the image block's
 # require_scanner then refuses before anything is built or pushed.
 LUXAUDIT_IMAGE    := $(if $(LUXAUDIT_REGISTRY),$(LUXAUDIT_REGISTRY)/luxardolabs/luxaudit:$(LUXAUDIT_VERSION))
@@ -112,6 +112,9 @@ PROD_NODE ?=
 PROD_USER ?= root
 PROD_DIR  ?= /opt/kidde-collector
 PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
+# The node's compose call names its directory and files outright, so it reads the same from any
+# working directory.
+PROD_NODE_DC := $(DC) --project-directory $(PROD_DIR) -f $(PROD_DIR)/compose.yml --env-file $(PROD_DIR)/.env.prod
 
 .PHONY: help version \
         build-local publish-sha release release-context-clean buildx-setup \
@@ -336,7 +339,7 @@ override sq = $(if $(findstring $(IB_NL),$(1)),$(error REFUSING: a value a block
 override sqw = $(foreach w,$(1),$(call sq,$(w)))
 # luxarch:build-core end - DO NOT edit this marker line: the image block's runtime guard reads its range.
 
-# luxarch:image-block asset v28 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit image-block`.
+# luxarch:image-block asset v29 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit image-block`.
 # ── Images: ONE naming scheme, and the NAME declares what the image IS ──────────────────────────
 # Emitted by `luxarch --emit image-block`. Two axes, both readable from the name alone:
 #
@@ -424,7 +427,7 @@ override CANDIDATE     := $(IMAGE):candidate-$(COMMIT)
 # v17: the make INVOCATION is judged too. Every name the block sets is `override`, so a command-line
 # value of one (silently ignored) refuses, as do `make -e`, `--eval`, MAKEFILES and MAKEFILE_LIST from
 # outside; and the makefile make read FIRST must be this directory's default one (no `-f <wrapper>`).
-# A stated limit: a makefile reading a file through HOME or PATH reads it in the clean evaluation too.
+# A makefile reading a file through HOME or PATH reads it in the clean evaluation too.
 override define require_make_inputs
 $(strip $(foreach w,$(MAKEOVERRIDES),$(if $(filter override,$(origin $(firstword $(subst :, ,$(subst =, ,$(w)))))),echo "REFUSING: $(firstword $(subst :, ,$(subst =, ,$(w)))) is set from the command line but the makefile defines it itself (an override): the image block refuses a value it would ignore"; exit 1; )))$(if $(filter-out --%,$(firstword $(MAKEFLAGS))),$(if $(findstring e,$(firstword $(MAKEFLAGS))),echo "REFUSING: make -e lets the environment override the makefile's own values: run make without -e"; exit 1; ))$(if $(filter --eval=%,$(MAKEFLAGS)),echo "REFUSING: make was run with --eval: it adds makefile text nobody committed. Run it without"; exit 1; )$(if $(filter-out file,$(origin MAKEFILE_LIST)),echo "REFUSING: MAKEFILE_LIST is set from outside the makefile"; exit 1; )\
 [ -z $(call sq,$(strip $(MAKEFILES))) ] || { \
@@ -1080,8 +1083,8 @@ override PUBLIC_LATEST_IMAGE := $(PUBLIC_REGISTRY)/$(if $(IMAGE_PRIMARY),$($(IMA
 # image whose public `:$(VERSION)` exists must hold the digest just rescanned and only its `:latest`
 # moves; an image whose public `:$(VERSION)` is absent is copied whole. Without it a public
 # `:$(VERSION)` refuses, as always. It is one run's choice on this make's own command line: another
-# origin, a parent make (MAKELEVEL) or an exported MAKEFLAGS naming it refuses. A stated limit: that
-# check reads make's starting environment in /proc, so a resume runs on Linux only.
+# origin, a parent make (MAKELEVEL) or an exported MAKEFLAGS naming it refuses. That check
+# reads make's starting environment in /proc, so a resume runs on Linux only.
 override IB_PUBLIC_RESUME = $(and $(filter command line,$(origin PUBLIC_RESUME)),$(filter 1,$(PUBLIC_RESUME)))
 override define public_resume_gate
 $(if $(filter-out undefined,$(origin PUBLIC_RESUME)),$(if $(filter-out command line,$(origin PUBLIC_RESUME)),echo "REFUSING: PUBLIC_RESUME is set in "$(call sq,$(origin PUBLIC_RESUME))": resuming a public copy is a choice for one run on the command line (make release-public PUBLIC_RESUME=1)"; exit 1; ,$(if $(IB_PUBLIC_RESUME),,echo "REFUSING: PUBLIC_RESUME="$(call sq,$(PUBLIC_RESUME))" is not 1"; exit 1; )))$(if $(IB_PUBLIC_RESUME),[ $(call sq,$(MAKELEVEL)) = 0 ] || { \
@@ -1239,7 +1242,7 @@ endif
 # the commit), refuses a mirror tag already published (immutable: bump MIRROR_VERSION), builds from
 # the commit with `--build-arg MIRROR_VERSION=<it>` (so the Dockerfile's `ARG MIRROR_VERSION` and the
 # tag are one value), scans it, and only then pushes `$(REGISTRY)/<name>:<MIRROR_VERSION>`. A stack or
-# a target pins MIRROR_IMAGE. `release` and `publish-sha` never touch it. A stated limit: it is built
+# a target pins MIRROR_IMAGE. `release` and `publish-sha` never touch it. It is built
 # for this host's architecture (PLATFORMS is the app's).
 MIRROR_VERSION       ?=
 MIRROR_IMAGE_NAME    ?=
@@ -1531,7 +1534,7 @@ endef
 # with the variables that point it at a repository (GIT_DIR, GIT_WORK_TREE, …) unset, so one set
 # elsewhere cannot make a worktree read as the main checkout, and so is each superproject this
 # checkout is a submodule of: a submodule checked out inside a linked worktree is in that worktree.
-# A stated limit: a makefile is trusted code, and a recipe of its own that runs
+# A makefile is trusted code: a recipe of its own that runs
 # `$(MAKE) dev-pin DEV_DEPLOY_FROM_WORKTREE=1` passes the value as a command line.
 override define require_main_checkout
 case $(call sq,$(origin DEV_DEPLOY_FROM_WORKTREE)) in \
@@ -1991,7 +1994,7 @@ SMOKE_STATIC_PATH ?=
 # The collector's entry point is app.main, which the default `app/*_main.py` glob does not match.
 SMOKE_ENTRY_MODULES ?= app.main
 
-# luxarch:smoke asset v14 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit smoke`.
+# luxarch:smoke asset v15 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit smoke`.
 # ── Smoke: probe the DEPLOYED stack from outside, after every dev deploy ──────────────────────────
 # Emitted by `luxarch --emit smoke`; paste below the image block. `make test` runs the app in-process
 # against its test stack, so it cannot see the proxy, the server, the production image or an entry
@@ -2045,6 +2048,12 @@ SMOKE_RUN_OPTS ?=
 # Setting: extra curl options (e.g. --cacert <file> for a private CA) -------------------------
 SMOKE_CURL_OPTS ?=
 
+# v15: `smoke-browser` runs on THIS machine's docker, the one the shell that ran make names (the image
+# block's IB_AMBIENT_DOCKER_HOST, or none), never the dev host this target's probes reach: its runner
+# mounts this machine's directories (the pages, the suite, the traces), which the dev host does not
+# hold, and it reaches SMOKE_URL over the network like any browser. The probes end with no `exit` when
+# they pass, so under `.ONESHELL` (one shell for the whole recipe) the hand-off still runs: v14's
+# `exit $$fail` ended that one shell with 0 before `smoke-browser`, and `make smoke` passed without it.
 # v14: with the browser-smoke block pasted below this one (luxarch --emit browser-smoke), `make smoke`
 # runs `smoke-browser` last, once every probe above has passed, so a page that breaks in a browser
 # fails the deploy. Without that block (opt-in) the line does nothing.
@@ -2186,8 +2195,8 @@ smoke: ## Probe the deployed dev stack: build commit, static asset, forged Host 
 	  done; fi; \
 	fi; \
 	[ "$$n" -ne 0 ] || echo "NOT RUN  entry points: no module under $(SMOKE_SCRIPTS_DIR) and no SMOKE_ENTRY_MODULES"; \
-	exit $$fail
-	@$(if $(value smoke_browser_block),$(MAKE) --no-print-directory smoke-browser,:)
+	[ "$$fail" = 0 ] || exit "$$fail"
+	@$(if $(value smoke_browser_block),$(if $(filter undefined,$(origin IB_AMBIENT_DOCKER_HOST)),,$(if $(IB_AMBIENT_DOCKER_HOST),DOCKER_HOST=$(call sq,$(IB_AMBIENT_DOCKER_HOST)),env -u DOCKER_HOST) )$(MAKE) --no-print-directory smoke-browser,:)
 
 docker-inspect: ## Inspect the released image's metadata
 	@docker inspect $(VERSION_IMAGE) --format='Version: {{index .Config.Labels "org.opencontainers.image.version"}}' 2>/dev/null || echo "Image not pulled"
@@ -2250,17 +2259,17 @@ prod-sync: check-prod-node ## Push compose.yml + .env.prod to the node (repo is 
 	@printf "✓ synced config to $(PROD_NODE):$(PROD_DIR)\n"
 
 prod-deploy: check-prod-node ## Pull the pinned TAG + recreate the collector on the node (run release first)
-	$(PROD_SSH) 'cd $(PROD_DIR) && $(PROD_DC) pull && $(PROD_DC) up -d'
+	$(PROD_SSH) '$(PROD_NODE_DC) pull && $(PROD_NODE_DC) up -d'
 	@printf "✓ deployed to $(PROD_NODE)\n"
 
 prod-status: check-prod-node ## Container status on the node
-	$(PROD_SSH) 'cd $(PROD_DIR) && $(PROD_DC) ps'
+	$(PROD_SSH) '$(PROD_NODE_DC) ps'
 
 prod-logs-remote: check-prod-node ## Follow collector logs on the node
-	$(PROD_SSH) 'cd $(PROD_DIR) && $(PROD_DC) logs --tail=100 -f'
+	$(PROD_SSH) '$(PROD_NODE_DC) logs --tail=100 -f'
 
 prod-health: check-prod-node ## Run the in-container health check on the node
-	$(PROD_SSH) 'cd $(PROD_DIR) && $(PROD_DC) exec -T kidde-collector python3 -m app.health.check'
+	$(PROD_SSH) '$(PROD_NODE_DC) exec -T kidde-collector python3 -m app.health.check'
 
 prod-rollback: check-prod-node ## List image tags cached on the node for rollback
 	$(PROD_SSH) 'docker images $(REGISTRY)/$(IMAGE_NAME) --format "table {{.Tag}}\t{{.CreatedAt}}"'
@@ -2296,7 +2305,7 @@ poetry-install: ## Verify deps resolve + install cleanly from poetry.lock (docke
 
 ##@ Quality (lint · types · tests · secrets)
 
-# luxarch:guard-run asset v10 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit guard-run`.
+# luxarch:guard-run asset v12 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit guard-run`.
 # ── GUARD_RUN: how every guard sees this checkout ───────────────────────────────────────────────────
 # Emitted by `luxarch --emit guard-run`; paste it above the targets that run the guards (`status:`, and
 # `arch:` / `lint:` / `audit:` where they run a guard image).
@@ -2331,7 +2340,7 @@ override GUARD_MAIN := $(if $(filter command,$(origin GUARD_MAIN)),$(GUARD_MAIN)
 # sub-make at its own MAKELEVEL) were refused at the first sub-make, so a correctly wired repo read
 # red. The block's own variables are set with `override` and never
 # exported, so neither `make -e` nor a parent's bare `export` can hand a sub-make other values.
-# Stated limits, each refused rather than misread: a `-f` path holding two spaces in a row or a tab
+# Refused rather than misread: a `-f` path holding two spaces in a row or a tab
 # (MAKEFILE_LIST collapses them: run `make -C`), and a checkout path holding `:` (docker reads it
 # as a mount option). Not refused: under `make -n`, a guard line that make runs anyway (a `+` line,
 # or one naming `$(MAKE)`) in a sub-make that inherited a command-line CURDIR.
@@ -2370,9 +2379,15 @@ override GUARD_RUN = guard_slot_run() ( $(guard_slot_body) $(guard_capped) ); gu
 #   - TARGETED runs take none: a GUARD_RUN naming `--rule <id>` (a value holding more than blanks
 #     and commas, which luxarch drops, so `--rule ' '` runs every rule), or a flag that scans nothing
 #     (`--emit*`, `--doc`, `--docs`, `--playbook`, `--version`, `--list-rules`, `--changelog`,
-#     `--new-rules`, `--coverage-ratchet`, `--help`), and `make test-fast PYTEST_ARGS=<…>`. Every
-#     other guard run is a full scan and takes one: `--path <file>` alone too, which narrows only
-#     what is shown while every rule still reads the whole repo.
+#     `--new-rules`, `--coverage-ratchet`, `--help`), a luxarch run with `--path <file>` (a value
+#     holding more than blanks), which from luxarch 0.373.0 runs only the per-file rules on the named
+#     files, and `make test-fast PYTEST_ARGS=<…>`. The image is read as docker reads it: the first
+#     word after `docker run` that is no option and no option's value (`-v <mount>`, `--name <x>`,
+#     `-e <K=V>`). It is `luxarch:<version>` at 0.373.0 or later, or a checkout's own
+#     `luxarch:local-<hash>`. Only the words after it are the guard's, so `--path` and the modes that
+#     read the whole repo (`--plan`, `--sweep`, `--ratchet`, `--json`) are read there, and an
+#     `--entrypoint` anywhere makes it a full scan. Every other guard run is a full scan and takes
+#     one: `--path` on an older image, under another tag, or on another guard, too.
 #   - NESTED heavy jobs take no second slot: a job whose descriptor 9 is open on one of slots
 #     1..HEAVY_SLOTS and holds its lock runs inside the job that took it (`check` running `test`
 #     running a scan), so it starts at once, at HEAVY_SLOTS=1 too. So does a job one of whose
@@ -2395,13 +2410,13 @@ override GUARD_RUN = guard_slot_run() ( $(guard_slot_body) $(guard_capped) ); gu
 #     file, and each slot file 644 so every user can open it read-only, which is all a lock needs: two
 #     users on one machine share one cap. A slot directory or file that is a symlink, not a plain
 #     file, or unreadable is refused, naming it.
-# Stated limits: the cap counts slots 1..HEAVY_SLOTS of each caller, so a caller with a larger setting
+# The cap counts slots 1..HEAVY_SLOTS of each caller, so a caller with a larger setting
 # (or a second makefile given with `-f` that sets one) uses more slots than one with a smaller; a
 # process a job starts that outlives it (a backgrounded daemon) keeps the descriptor, and so the slot,
 # until it exits; where there is no /proc (macOS) a job started through a process that closed its
 # descriptors is not seen as nested and waits for a slot of its own; and an ancestor shell that opens
-# a held slot file on descriptor 9 by hand makes its children read as nested in that slot. Found by
-# attack round 3 and not closed: a `--rule` substring that matches many rules (`--rule .`) is taken as
+# a held slot file on descriptor 9 by hand makes its children read as nested in that slot.
+# Also as built: a `--rule` substring that matches many rules (`--rule .`) is taken as
 # targeted; a job nested through an ancestor runs unlocked from the moment it finds the ancestor's
 # lock until its own background request reaches the kernel, so an ancestor that exits in that window
 # (milliseconds; not hit unloaded in 50 tries) lets a new job share its slot; a slot file removed
@@ -2441,8 +2456,16 @@ override guard_slot_vals = $(foreach v,HEAVY_SLOTS HEAVY_SLOT_DIR,$(if $(filter 
 override guard_slot = $(if $(guard_dry),:,set -- $(guard_slot_vals); $(guard_slot_body) :)
 override guard_slot_body = gs_d=$$1 gs_n=$$2 gs_job=$$3; shift 3; \
   case "$$gs_n" in (""|0*|*[!0-9]*|?????*) echo "REFUSING: HEAVY_SLOTS is \"$$gs_n\", not a whole number from 1 to 9999: set it in Makefile.local" >&2; exit 2;; esac; \
-  gs_x=; gs_p=; for gs_a in "$$@"; do case "$$gs_p" in (--rule) case "$$gs_a" in (*[![:space:],]*) gs_x=1;; esac;; esac; \
-    case "$$gs_a" in (--rule=*[![:space:],]*|--emit|--emit=?*|--emit-*|--doc|--doc=?*|--docs|--playbook|--playbook=?*|--version|--list-rules|--changelog|--new-rules|--coverage-ratchet|--help) gs_x=1;; esac; gs_p=$$gs_a; done; \
+  gs_x=; gs_p=; gs_pa=; gs_nw=; gs_la=; gs_im=; gs_rn=; gs_sk=; for gs_a in "$$@"; do case "$$gs_p" in (--rule) case "$$gs_a" in (*[![:space:],]*) gs_x=1;; esac;; (--path) [ -z "$$gs_im" ] || case "$$gs_a" in (*[![:space:]]*) gs_pa=1;; (*) gs_nw=1;; esac;; esac; \
+    case "$$gs_a" in (--rule=*[![:space:],]*|--emit|--emit=?*|--emit-*|--doc|--doc=?*|--docs|--playbook|--playbook=?*|--version|--list-rules|--changelog|--new-rules|--coverage-ratchet|--help) gs_x=1;; (--entrypoint|--entrypoint=*) gs_nw=1;; esac; \
+    if [ -n "$$gs_im" ]; then case "$$gs_a" in (--path=*[![:space:]]*) gs_pa=1;; (--path=*|--pl*|--sw*|--ra*|--js*) gs_nw=1;; esac; \
+    elif [ -z "$$gs_rn" ]; then [ "$$gs_a" != run ] || gs_rn=1; \
+    elif [ -n "$$gs_sk" ]; then gs_sk=; \
+    else case "$$gs_a" in (-v|--volume|-e|--env|--env-file|--name|-h|--hostname|-w|--workdir|--network|--net|--network-alias|-u|--user|-l|--label|--label-file|--mount|--platform|-m|--memory|--memory-swap|--memory-reservation|-c|--cpu-shares|--cpus|--cpuset-cpus|--oom-score-adj|--add-host|--cap-add|--cap-drop|--device|--dns|--group-add|--ipc|--pid|--uts|--userns|--cgroupns|--security-opt|--tmpfs|--ulimit|--shm-size|--log-driver|--log-opt|-p|--publish|--expose|--runtime|--gpus|--restart|--stop-signal|--stop-timeout|--cidfile|--pull|--volumes-from|--link|--ip|--ip6|--mac-address|--health-cmd|--health-interval|--health-retries|--health-timeout|--isolation|--attach|-a) gs_sk=1;; (-*) ;; \
+      (*) gs_im=1; case "$$gs_a" in (luxarch:local-?*|*/luxarch:local-?*) gs_la=1;; (luxarch:[0-9]*|*/luxarch:[0-9]*) \
+      gs_mj=$$(expr "x$$gs_a" : '.*luxarch:\([0-9][0-9]*\)\.' || :); gs_mn=$$(expr "x$$gs_a" : '.*luxarch:[0-9][0-9]*\.\([0-9][0-9]*\)' || :); \
+      if [ -n "$$gs_mj" ] && [ -n "$$gs_mn" ] && { [ "$$gs_mj" -gt 0 ] || [ "$$gs_mn" -ge 373 ]; }; then gs_la=1; fi;; esac;; esac; fi; gs_p=$$gs_a; done; \
+  [ -z "$$gs_pa" ] || [ -n "$$gs_nw" ] || [ -z "$$gs_la" ] || gs_x=1; \
   gs_who() { gs_t=$$(mktemp "$$gs_d/.who.XXXXXX") && { printf "%s\n" "$$gs_job (shell pid $$$$, user $$(id -un 2>/dev/null))" > "$$gs_t"; chmod 644 "$$gs_t"; mv -f "$$gs_t" "$$gs_f.who" 2>/dev/null || rm -f "$$gs_t"; }; }; \
   gs_busy() { command -v docker >/dev/null 2>&1 && docker ps -q --filter "label=fleet.heavy-slot=$$1" 2>/dev/null | grep -qE '^[0-9a-f]{12,64}$$'; }; \
   gs_lock() { if command -v flock >/dev/null 2>&1; then flock -n -E 75 9; else python3 -I -c "import fcntl,os,sys; sys.excepthook=lambda t,v,b: os._exit(75 if t is BlockingIOError else 2); fcntl.flock(9, fcntl.LOCK_EX | fcntl.LOCK_NB)"; fi; }; \
@@ -2495,7 +2518,7 @@ TEST_SERVICES := kidde_influxdb_test
 TEST_ENV := -e TEST_INFLUXDB_URL=http://kidde_influxdb_test:8086 -e TEST_INFLUXDB_TOKEN=kidde-test-token \
             -e TEST_INFLUXDB_ORG=kidde -e TEST_INFLUXDB_BUCKET=kidde
 
-# luxarch:test-block asset v14 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit test-block`.
+# luxarch:test-block asset v16 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit test-block`.
 # ── Test: THE suite, in the test image, against an isolated stack of real services ───────────────
 # Emitted by `luxarch --emit test-block`; paste below the build core (`luxarch --emit build-core`, v4:
 # it builds with the core's `img_*` helpers and TEST_IMAGE, and the repo's BUILD_ARGS, and quotes every
@@ -2513,6 +2536,18 @@ TEST_ENV := -e TEST_INFLUXDB_URL=http://kidde_influxdb_test:8086 -e TEST_INFLUXD
 #     one per run (`-p`), so parallel runs never collide, the suite cannot reach the dev database or
 #     cache at all (it is on another network), and teardown (`down --volumes --remove-orphans`)
 #     removes exactly this run's containers and data, pass or fail, never the dev stack.
+#   - NO INTERNET (v16): the suite runs on a network of the run's own, `<project>-suite`, created
+#     `--internal`: it has no route out of the docker host (the host's own listeners on that
+#     network's bridge address stay reachable). Each container of the run's compose project joins it
+#     under its service name, so the suite reaches its services: a test that loads a page cannot call
+#     a real third-party API, and its result never depends on one. v15 ran the suite on the compose
+#     project's network, which had egress, and a suite with no services on docker's default bridge,
+#     which had it too. There is no egress opt-in yet: a suite that needs the internet fails, and
+#     its FAIL says so. TEST_ENV is the suite's environment and nothing else: `-e NAME=value`,
+#     `--env NAME=value` and `--env-file <file>` (or their `=` forms); any other word is refused,
+#     since a docker option could join another network or reach the host. A bare `-e NAME` (which
+#     copies NAME from the caller's environment) is refused, and so is an `--env-file` holding a
+#     `$`, or outside the checkout: the suite gets only values this repository holds.
 #   - READINESS from each service's own compose healthcheck (`up --wait`), not a sleep or a loop:
 #     the service declares when it is ready. For Postgres, probe over TCP with the real role
 #     (`pg_isready -h 127.0.0.1 -U <user> -d <db>`); over the socket it answers while initdb's
@@ -2626,7 +2661,7 @@ TEST_ENV := -e TEST_INFLUXDB_URL=http://kidde_influxdb_test:8086 -e TEST_INFLUXD
 #   - A HEAVY-JOB SLOT (v12): `make test` holds one of the machine's HEAVY_SLOTS (the guard-run
 #     block's `guard_slot`, v4) for the whole run, and waits, saying so, while they are all taken. A
 #     narrowed `make test-fast PYTEST_ARGS=<…>` takes none; inside `make check`, which holds one, the
-#     suite runs in the gate's slot. Stated limit: any PYTEST_ARGS that is not blank counts as
+#     suite runs in the gate's slot. Any PYTEST_ARGS that is not blank counts as
 #     narrowing (`PYTEST_ARGS=tests/` too); a blank one takes a slot.
 #   - THE [shared] OVERLAY (v7). A repo declaring `[shared]` keeps 0-byte placeholders in each app
 #     that the real shared code is mounted over; the suite runs from the read-only `/repo` mount, so
@@ -2675,7 +2710,7 @@ TEST_FLOOR ?= .luxlint.toml
 # suite, set by the TEST_* settings above. Each name is an image's settings name, as in the image
 # block's IMAGES: its test image is the `test` stage of `<name>_DOCKERFILE` in `<name>_BUILD_CONTEXT`,
 # tagged from `<name>_IMAGE_NAME`. A suite's own settings are `<name>_TEST_SERVICES`, `_TEST_ENV`,
-# `_TEST_WORKDIR`, `_TEST_COV`, `_TEST_FLOOR`, `_TEST_MIGRATIONS`, `_TEST_MOUNTS` and
+# `_TEST_WORKDIR`, `_TEST_COV`, `_TEST_FLOOR`, `_TEST_MIGRATIONS`, `_TEST_MOUNTS`,
 # `_TEST_OVERLAY_COV`; one it leaves unset is the TEST_* value. Every
 # suite has a floor of its own: the run refuses two that name the same file. For example
 #   TEST_SUITES          := backend agent
@@ -2813,7 +2848,7 @@ test: test-reap ## THE suite (each of TEST_SUITES in turn): its own test image, 
 	  p="$$run"$(if $(filter -,$(s)),,-$$(printf '%s' $(call sq,$(s)) | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-')); out="$$D/$$p"; \
 	  img=$(call sq,$(call img_test,$(call test_suite_image,$(s))))-"$$tok"; \
 	  dc() { $(call sqw,$(TEST_COMPOSE)) -p "$$p" --env-file $(call sq,$(or $(TEST_ENV_FILE),/dev/null)) --profile $(call sq,$(TEST_PROFILE)) "$$@"; }; \
-	  trap 'trap "" HUP INT TERM; ok=; for t in 1 2 3; do ( trap - HUP INT TERM; dc down --volumes --remove-orphans ) >/dev/null 2>&1; [ -z "$$(trap - HUP INT TERM; docker network ls -q --filter "label=com.docker.compose.project=$$p"; docker volume ls -q --filter "label=com.docker.compose.project=$$p")" ] && { ok=1; break; }; done; if [ -n "$$ok" ]; then ( trap - HUP INT TERM; exec docker rmi -f "$$img" ) >/dev/null 2>&1; else printf "FAIL  the test stack %s did not come down (its networks or volumes remain): make test-reap removes it once they are free\n" "$$p"; exit 1; fi' EXIT; \
+	  trap 'trap "" HUP INT TERM; ok=; for t in 1 2 3; do ( trap - HUP INT TERM; dc down --volumes --remove-orphans ) >/dev/null 2>&1; ( trap - HUP INT TERM; exec docker network rm "$$p-suite" ) >/dev/null 2>&1; [ -z "$$(trap - HUP INT TERM; docker network ls -q --filter "label=com.docker.compose.project=$$p"; docker volume ls -q --filter "label=com.docker.compose.project=$$p")" ] && { ok=1; break; }; done; if [ -n "$$ok" ]; then ( trap - HUP INT TERM; exec docker rmi -f "$$img" ) >/dev/null 2>&1; else printf "FAIL  the test stack %s did not come down (its networks or volumes remain): make test-reap removes it once they are free\n" "$$p"; exit 1; fi' EXIT; \
 	  trap '[ -z "$$kid" ] || tree "$$kid"' TERM; \
 	  mkdir "$$out" && chmod 733 "$$out" || exit 2; \
 	  mig=$(call sq,$(call test_suite,$(s),MIGRATIONS)); mig=$${mig%/}; \
@@ -2844,7 +2879,15 @@ test: test-reap ## THE suite (each of TEST_SUITES in turn): its own test image, 
 	  $(if $(filter -,$(s)),,printf '── suite %s (%s)\n' $(call sq,$(s)) $(call sq,$(call test_suite,$(s),WORKDIR));) \
 	  bg docker build --load --target test $$lab --label "luxarch.test-block.checkout=$$co" --label "luxarch.test-block.project=$$p" $(call sqw,$(BUILD_ARGS)) -f $(call sq,$(call img_dockerfile,$(call test_suite_image,$(s)))) -t "$$img" $(call sq,$(call img_context,$(call test_suite_image,$(s)))) >/dev/null \
 	    || { printf 'FAIL  the test image did not build: the test stage of %s\n' $(call sq,$(call img_dockerfile,$(call test_suite_image,$(s)))); exit 1; }; \
-	  net=; if [ -n $(call sq,$(strip $(call test_suite,$(s),SERVICES))) ]; then \
+	  nx=; for w in $(call sqw,$(call test_suite,$(s),ENV)); do v=; if [ -n "$$nx" ]; then v=$$w; else case "$$w" in (-e|--env|--env-file) nx=$$w; continue;; (--env-file=*) nx=--env-file; v=$${w#*=};; (--env=*) nx=--env; v=$${w#*=};; (-e?*) nx=-e; v=$${w#-e};; \
+	    (*) printf 'REFUSING: %s holds %s: TEST_ENV is the suite'"'"'s environment and nothing else: -e NAME=value and --env-file <file> (or their = forms). Any other docker option could join another network or reach the host and undo the suite'"'"'s isolation\n' $(call sq,$(call test_suite_var,$(s),ENV)) "$$w"; exit 2;; esac; fi; \
+	    if [ "$$nx" = --env-file ]; then case "$$v" in (/*|..|../*|*/..|*/../*|*'$$'*) bad=1;; (*) bad=; d=$$(CDPATH= cd -P -- "$$(dirname -- "$$v")" 2>/dev/null && pwd -P) || d=; case "$$d/" in ("$$(pwd -P)"/*) ;; (*) bad=1;; esac; [ ! -L "$$v" ] || bad=1;; esac; \
+	      [ -z "$$bad" ] || { printf 'REFUSING: %s hands the suite --env-file %s: the file must be in this checkout, named without a $$: the suite gets only values this repository holds\n' $(call sq,$(call test_suite_var,$(s),ENV)) "$$v"; exit 2; }; \
+	    else case "$$v" in (*=*) ;; (*) printf 'REFUSING: %s holds %s %s with no =: a bare name copies that variable from the caller'"'"'s environment into the suite; write -e NAME=value\n' $(call sq,$(call test_suite_var,$(s),ENV)) "$$nx" "$$v"; exit 2;; esac; fi; nx=; done; \
+	  [ -z "$$nx" ] || { printf 'REFUSING: %s ends with an option and no value\n' $(call sq,$(call test_suite_var,$(s),ENV)); exit 2; }; \
+	  bg docker network create --internal $$lab --label "luxarch.test-block.checkout=$$co" --label "com.docker.compose.project=$$p" "$$p-suite" >/dev/null \
+	    || { printf 'FAIL  could not create the suite network %s\n' "$$p-suite"; exit 1; }; \
+	  if [ -n $(call sq,$(strip $(call test_suite,$(s),SERVICES))) ]; then \
 	    bg dc up -d --wait --wait-timeout 120 $(call sqw,$(call test_suite,$(s),SERVICES)) \
 	      || { printf 'FAIL  the test services did not become healthy: %s\n' $(call sq,$(call test_suite,$(s),SERVICES)); exit 1; }; \
 	    printf '%s\n' 'SELECT 1 / (CASE WHEN pg_catalog.inet_server_addr() IS NULL AND pg_catalog.rtrim(pg_catalog.pg_read_file('"'"'postmaster.pid'"'"'), E'"'"'\n'"'"') = :'"'"'pm'"'"' THEN 1 ELSE 0 END) AS its_own_server;' "CREATE ROLE luxarch_test_server_$$tok NOLOGIN;" > "$$D/mark.sql" || exit 2; \
@@ -2852,17 +2895,15 @@ test: test-reap ## THE suite (each of TEST_SUITES in turn): its own test image, 
 	      sid=$$(dc ps -q "$$sv" | head -n 1); full=$$(docker inspect -f '{{.Id}}' "$$sid" 2>/dev/null); why=; pmode=$$(docker inspect -f '{{.HostConfig.PidMode}}' "$$sid" 2>/dev/null); case "$$pmode" in (''|private) ;; (*) why="its pid namespace is shared ($$pmode)";; esac; pgd=$$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$$sid" 2>/dev/null | sed -n 's/^PGDATA=//p' | head -n 1); pgd=$${pgd:-/var/lib/postgresql/data}; res=$$(dc exec -T "$$sv" sh -c 'for d in "$${PGDATA:-/var/lib/postgresql/data}" /var/run/postgresql; do (cd "$$d" 2>/dev/null && pwd -P); done' 2>/dev/null </dev/null); [ -n "$$why" ] || why=$$(docker inspect -f '{{range .Mounts}}{{.Type}}|{{.Name}}|{{.Destination}}{{println}}{{end}}' "$$sid" 2>/dev/null | while IFS='|' read -r mt mn md; do [ -n "$$md" ] || continue; hit=; for dd in "$$pgd" /var/run/postgresql $$res; do case "$$dd/" in ("$$md"/*) hit=1;; esac; case "$$md/" in ("$$dd"/*) hit=1;; esac; done; [ -n "$$hit" ] || continue; case "$$mt" in (tmpfs) ;; (volume) vd=$$(docker volume inspect -f '{{.Driver}}|{{json .Options}}' "$$mn" 2>/dev/null); case "$$vd" in ('local|null'|'local|{}') ;; (*) echo "$$md is the volume $$mn, whose driver or options put its data elsewhere ($$vd)"; break;; esac; [ "$$(docker volume inspect -f '{{index .Labels "com.docker.compose.project"}}' "$$mn" 2>/dev/null)" = "$$p" ] && continue; others=$$(docker ps -aq --no-trunc --filter "volume=$$mn" | grep -v -x "$$full"); if printf '%s\n' "$$mn" | grep -qx '[0-9a-f]\{64\}' && [ -z "$$others" ]; then continue; fi; echo "$$md is the volume $$mn, which is not this run's own (it outlives the run, or another container uses it)"; break;; (*) echo "$$md is a $$mt mount, not this run's own"; break;; esac; done | head -n 1); \
 	      bgin "$$D/mark.sql" dc exec -T -e LUXARCH_MARK_REFUSE="$$why" "$$sv" sh -c 'sock=; for f in /var/run/postgresql/.s.PGSQL.*; do case "$$f" in (*.lock) ;; (*) [ -S "$$f" ] && sock=$$f;; esac; done; pid=$${PGDATA:-/var/lib/postgresql/data}/postmaster.pid; pm=$$(cat "$$pid" 2>/dev/null); [ -n "$$sock" ] && [ -n "$$pm" ] && [ "$$(cat /proc/$$(head -n 1 "$$pid")/comm 2>/dev/null)" = postgres ] && command -v psql >/dev/null 2>&1 || exit 0; [ -z "$${LUXARCH_MARK_REFUSE:-}" ] || { printf "REFUSING to mark this Postgres server: %s\n" "$$LUXARCH_MARK_REFUSE" >&2; exit 3; }; unset PGHOST PGHOSTADDR PGPORT PGSERVICE PGSERVICEFILE PGDATABASE PGUSER PGOPTIONS PGSYSCONFDIR PGPASSFILE; [ -z "$${POSTGRES_PASSWORD_FILE:-}" ] || POSTGRES_PASSWORD=$$(cat "$$POSTGRES_PASSWORD_FILE"); PGPASSWORD=$${POSTGRES_PASSWORD:-} exec psql -h /var/run/postgresql -p "$${sock##*.}" -v pm="$$pm" -v ON_ERROR_STOP=1 -X -q -U "$${POSTGRES_USER:-postgres}" -d postgres' >/dev/null \
 	        || { r=$$?; [ "$$r" = 126 ] || [ "$$r" = 127 ] || { printf 'FAIL  could not mark %s as this run'"'"'s test server: the role luxarch_test_server_<run token>, created over the server'"'"'s own socket as $$POSTGRES_USER, which the test-db-bound block asks every Postgres connection for\n' "$$sv"; exit 1; }; }; done; \
-	    cid=$$(dc ps -q $(call sq,$(firstword $(call test_suite,$(s),SERVICES)))); net=; \
-	    for n in $$(docker inspect -f '{{range $$k, $$v := .NetworkSettings.Networks}}{{$$k}} {{end}}' $$cid); do \
-	      [ "$$(docker network inspect -f '{{index .Labels "com.docker.compose.project"}}' $$n)" = "$$p" ] && { net=$$n; break; }; done; \
-	    [ -n "$$net" ] || { printf 'FAIL  %s joined no network of this run'"'"'s own project (%s)\n' $(call sq,$(firstword $(call test_suite,$(s),SERVICES))) "$$p"; exit 1; }; \
-	    net="--network $$net"; fi; \
-	  bg docker run --rm --init $(guard_caps) $$lab --label "luxarch.test-block.checkout=$$co" -e TINI_KILL_PROCESS_GROUP=1 $$net $(call sqw,$(call test_suite,$(s),ENV)) -e PYTEST_ADDOPTS="$${PYTEST_ARGS:-}" -e LUXARCH_TEST_RUN="$$tok" -e LUXARCH_TEST_MIGRATIONS="$$mig" -e LUXARCH_TEST_FAST="$$fast" \
+	    for cid in $$(dc ps -q); do sv=$$(docker inspect -f '{{index .Config.Labels "com.docker.compose.service"}}' "$$cid" 2>/dev/null); \
+	      [ -n "$$sv" ] && docker network connect --alias "$$sv" "$$p-suite" "$$cid" >/dev/null \
+	        || { printf 'FAIL  %s (%s) could not join the suite network %s, so the suite cannot reach it\n' "$${sv:-a container}" "$$cid" "$$p-suite"; exit 1; }; done; fi; \
+	  bg docker run --rm --init $(guard_caps) $$lab --label "luxarch.test-block.checkout=$$co" -e TINI_KILL_PROCESS_GROUP=1 --network "$$p-suite" $(call sqw,$(call test_suite,$(s),ENV)) -e PYTEST_ADDOPTS="$${PYTEST_ARGS:-}" -e LUXARCH_TEST_RUN="$$tok" -e LUXARCH_TEST_MIGRATIONS="$$mig" -e LUXARCH_TEST_FAST="$$fast" \
 	    -e LUXARCH_TEST_COV=$(call sq,$(call test_suite,$(s),COV)) -e LUXARCH_TEST_OMIT="$$omit" -e COVERAGE_CORE=sysmon -e COVERAGE_FILE=/out/.coverage -e PYTHONDONTWRITEBYTECODE=1 \
 	    -v $(call sq,$(CURDIR)):/repo:ro $$mnt -v "$$D/cfg":/cfg:ro -v "$$out":/out -w /repo/$(call sq,$(call test_suite,$(s),WORKDIR)) "$$img" \
 	    sh -c 'm=$${LUXARCH_TEST_MIGRATIONS:-}; o=$${LUXARCH_TEST_OMIT:-}; unset LUXARCH_TEST_DB_REFUSALS LUXARCH_TEST_DB_TARGET; p=; if [ -e luxarch_test_db ]; then PYTHONPATH="$$PWD/luxarch_test_db/children$${PYTHONPATH:+:$$PYTHONPATH}"; PYTHONPYCACHEPREFIX=/tmp/luxarch-pycache; export PYTHONPATH PYTHONPYCACHEPREFIX; p=1; fi; LUXARCH_TEST_DB_SCOPE=suite python -m coverage run --branch --source="$$LUXARCH_TEST_COV" $${o:+"--omit=$$o"} -m pytest -c /cfg/pytest.ini --rootdir=. -p no:cacheprovider $${p:+-p luxarch_test_db.identity -p luxarch_test_db.bound} $${m:+"--ignore=$$m"}; s=$$?; if [ -n "$$m" ] && [ -z "$${LUXARCH_TEST_FAST:-}" ]; then PYTEST_ADDOPTS= LUXARCH_TEST_DB_SCOPE=server python -m coverage run --append --branch --source="$$LUXARCH_TEST_COV" $${o:+"--omit=$$o"} -m pytest -c /cfg/pytest.ini --rootdir=. -p no:cacheprovider $${p:+-p luxarch_test_db.identity} --confcutdir="$$m" "$$m"; ms=$$?; [ "$$ms" = 0 ] || echo "FAIL  the migration tests in $$m failed (exit $$ms)"; [ "$$s" != 0 ] || s=$$ms; fi; python -m coverage report --show-missing --precision=2 > /out/coverage.txt; echo $$? > /out/coverage.rc; python -m coverage json -q -o - > /out/coverage.json; cat /out/coverage.txt; exit $$s'; \
 	  rc=$$?; \
-	  [ "$$rc" = 0 ] || { echo "FAIL  the suite failed (exit $$rc)"; exit 1; }; \
+	  [ "$$rc" = 0 ] || { echo "FAIL  the suite failed (exit $$rc). It runs with no internet: egress is not supported yet, so a test that calls a real outside host fails"; exit 1; }; \
 	  [ -z "$$fast" ] || { echo "test-fast: passed, with no coverage verdict and no migration tests (make test runs both)"; exit 0; }; \
 	  [ "$$(cat "$$out/coverage.rc" 2>/dev/null)" = 0 ] || { printf 'FAIL  coverage measured nothing (coverage report: %s): check %s names the package the suite imports\n' "$$(tail -n 1 "$$out/coverage.txt" 2>/dev/null)" $(call sq,$(call test_suite_var,$(s),COV)); exit 1; }; \
 	  [ -f $(call sq,$(abspath $(call test_suite,$(s),FLOOR))) ] || { printf 'FAIL  the coverage floor %s (%s) does not exist: put [test].coverage_min there\n' $(call sq,$(call test_suite,$(s),FLOOR)) $(call sq,$(call test_suite_var,$(s),FLOOR)); exit 1; }; \
@@ -2963,7 +3004,7 @@ honest: ## Honesty gate — fail if a guard family scanned nothing or the type l
 # Order: pin drift -> honesty -> ruff -> types -> tests -> architecture -> dep CVEs -> secrets.
 # It is a GATE, not a report: Make stops at the first failing step. For the full red board at
 # once, run `make plan` (luxarch --plan) — reds phase-ordered and clustered by file.
-# luxarch:check-gate asset v5 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit check-gate`.
+# luxarch:check-gate asset v6 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit check-gate`.
 # ── The fleet gate: every leg runs, then the gate fails naming each red leg ───────────────────────
 # Emitted by `luxarch --emit check-gate`; it replaces a hand-written `check:` line. A gate written as a
 # prerequisite list (`check: … lint mypy test arch …`) stops at the FIRST failing leg: one ruff finding
@@ -2996,7 +3037,7 @@ honest: ## Honesty gate — fail if a guard family scanned nothing or the type l
 # GNUMAKEFLAGS given as a command-line variable is refused, and MAKE and SHELL are checked as the
 # recipe runs: make's own MAKE, and a POSIX shell.
 # Under `make -n` the legs dry-run (each sub-make prints its commands) and the gate exits 1 with no
-# verdict: nothing ran, so nothing passed. Stated limits: a second makefile given with `-f` is part
+# verdict: nothing ran, so nothing passed. A second makefile given with `-f` is part
 # of the makefile as far as make can tell, and a variable a leg runs that the makefile sets with `?=`
 # or never sets (an image, a tool, its arguments) takes a value from the environment; the gate can
 # tell neither from your own. `make -o check`, or `-o` in MAKEFLAGS in the environment, marks `check`
@@ -3059,7 +3100,7 @@ status: ## Regenerate the committed guard-status files (.lux*-status.json) — t
 # The asset reads the luxlint image as $(LUXLINT); the gitleaks mirror lives beside it.
 LUXLINT = $(LUXLINT_IMAGE)
 
-# luxarch:gitleaks asset v25 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit gitleaks`.
+# luxarch:gitleaks asset v27 - DO NOT edit this marker line; it is how repo.emitted_assets_current knows your copy is current. Re-emit with `luxarch --emit gitleaks`.
 # ── The privacy gate: EVERY surface a commit publishes ──────────────────────────────────────────
 # Emitted by `luxarch --emit gitleaks`. Drop in verbatim.
 #
@@ -3105,6 +3146,9 @@ $(if $(filter 3.%,$(MAKE_VERSION)),$(error REFUSING: GNU make $(MAKE_VERSION) is
 # The identity pass refuses one from the environment or the command line, where a value left in
 # the shell (`GIT_IDENTITY_OK=.`) would match every author and pass any identity. It is never
 # exported, so a bare `export` in the makefile does not hand it to a sub-make as such a value.
+# v27: an allowance other than this default is honoured only while every makefile make reads is a
+# file this repository commits, unchanged from HEAD (its content compared): an untracked, edited,
+# other-repository or space-named makefile refuses it, whatever that makefile holds.
 GIT_IDENTITY_OK ?= <214140984\+luxardolabs@users\.noreply\.github\.com>$$|<noreply@github\.com>$$
 unexport GIT_IDENTITY_OK
 
@@ -3552,8 +3596,8 @@ unexport gitleaks_stage_py
 # tag object, the tags a tag points at included (a tag of a tag shows `for-each-ref` only its outer
 # tagger and message). The identity and message passes both read this list. `$$X` names the list file
 # and `$$N` the run's nonce; each git call writes a file, so a failing one stops the pass (`set -e`).
-override gitleaks_objects = git rev-list --branches --tags HEAD > "$$X"; \
-  git for-each-ref refs/heads refs/tags --format='%(objecttype) %(objectname)' > "$$X.r"; \
+override gitleaks_objects = git rev-list --branches --tags --glob='refs/notes/*' HEAD > "$$X"; \
+  git for-each-ref refs/heads refs/tags refs/notes --format='%(objecttype) %(objectname)' > "$$X.r"; \
   LC_ALL=C sed -n 's/^tag //p' "$$X.r" > "$$X.n"; LC_ALL=C sort -u "$$X.n" > "$$X.t"; \
   while [ -s "$$X.t" ]; do cat "$$X.t" >> "$$X"; \
     git cat-file --batch="$$N %(objectname) %(objecttype)" < "$$X.t" > "$$X.r"; LC_ALL=C tr -d '\000' < "$$X.r" > "$$X.c"; \
@@ -3611,7 +3655,18 @@ function num(p, w,   v, k) {
   for (k = 0; k < w; k++) v = v * 256 + BY[p + k]
   return v
 }
+# v27: a header git writes is skipped only when its value has the shape git writes there (an object
+# id, a type word, an encoding name, a tag name with no `@`); any other header is judged, its name
+# and value together, so `encoding <an address>` and a header named by an address are identities.
+function shaped(hn, hv) {
+  if (hn == "tree" || hn == "parent" || hn == "object") return hv ~ /^[0-9a-f]+$/ && (length(hv) == 40 || length(hv) == 64)
+  if (hn == "type") return hv ~ /^(commit|tree|blob|tag)$/
+  if (hn == "encoding") return hv ~ /^[A-Za-z0-9._:+-]+$/
+  if (hn == "tag") return hv !~ /@/
+  return 0
+}
 function out(s, where) {
+  if (QUIET) return
   gsub(/[\t\n\r]/, " ", s)
   print s "\t" where
 }
@@ -3622,15 +3677,42 @@ function emit(s, where) {
 function unreadable(where) {
   out("a signature this pass cannot read <?>", where)
 }
-function runs(p, e, where,   i, r) {
-  r = ""
-  for (i = p; i <= e + 1; i++) {
-    if (i <= e && BY[i] >= 32 && BY[i] <= 126) { r = r sprintf("%c", BY[i]); continue }
-    while (match(r, /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*[.][A-Za-z][A-Za-z]+/)) {
-      out("signer <" substr(r, RSTART, RLENGTH) ">", where); r = (RSTART + RLENGTH <= length(r)) ? substr(r, RSTART + RLENGTH) : ""
+# v27: an X.509 signature (CMS) is read as DER, by tag and length (indefinite lengths too): every
+# IA5, UTF8, Printable, Teletex, Visible and BMP string, and every email and URI name, holding an `@`
+# is an identity; an OCTET STRING that is itself DER is read too. DER it cannot read is unreadable.
+# Read as printable runs, the length byte before an emailAddress joined the address.
+function bmp(p, e,   s, i) {
+  if ((e - p + 1) % 2) return "?"
+  s = ""
+  for (i = p; i < e; i += 2) s = s ((BY[i] == 0 && BY[i + 1] >= 32 && BY[i + 1] <= 126) ? sprintf("%c", BY[i + 1]) : "?")
+  return s
+}
+function der(p, e, where, indef,   t, l1, n, len, k, s, q) {
+  while (p <= e) {
+    if (indef && p + 1 <= e && BY[p] == 0 && BY[p + 1] == 0) return p + 2
+    t = BY[p++]
+    if (t % 32 == 31 || p > e) return -1
+    l1 = BY[p++]
+    if (l1 < 128) len = l1
+    else if (l1 == 128) len = -1
+    else { n = l1 - 128; if (n > 4 || p + n - 1 > e) return -1; len = 0; for (k = 0; k < n; k++) len = len * 256 + BY[p + k]; p += n }
+    if (len < 0) {
+      if (int(t / 32) % 2 == 0) return -1
+      p = der(p, e, where, 1)
+      if (p < 0) return -1
+      continue
     }
-    r = ""
+    if (p + len - 1 > e) return -1
+    if (int(t / 32) % 2 == 1) { if (len > 0 && der(p, p + len - 1, where, 0) < 0) return -1 }
+    else if (t == 30) { s = bmp(p, p + len - 1); if (s ~ /@/) emit(s, where) }
+    else if (t == 12 || t == 19 || t == 20 || t == 22 || t == 26 || t == 129 || t == 134) { s = str(p, p + len - 1); if (s ~ /@/) emit(s, where) }
+    else if (t == 4 && len > 1 && BY[p] == 48) {
+      q = QUIET; QUIET = 1; k = der(p, p + len - 1, where, 0); QUIET = q
+      if (k == p + len) der(p, p + len - 1, where, 0)
+    }
+    p += len
   }
+  return indef ? -1 : p
 }
 function subs(p, e, where,   l1, len, t, nl, vl) {
   while (p <= e) {
@@ -3705,6 +3787,79 @@ function sshstrings(p, e, where,   len, s) {
   }
   return 1
 }
+# v27: an SSH certificate (PROTOCOL.certkeys), field by field: its key id and principals are judged as
+# identities, and its key type and extension names (`…@openssh.com`) are not. Read as printable runs,
+# the key type `ssh-ed25519-cert-v01@openssh.com` was an address, so every certificate was refused.
+function sshfield(p, e,   len) {
+  if (p + 3 > e) return -1
+  len = num(p, 4)
+  return (p + 3 + len > e) ? -1 : p + 4 + len
+}
+function sshprincipals(p, e, where,   len, s) {
+  while (p <= e) {
+    if (p + 3 > e) return 0
+    len = num(p, 4); p += 4
+    if (p + len - 1 > e) return 0
+    s = str(p, p + len - 1)
+    if (s ~ /@/) emit(s, where)
+    p += len
+  }
+  return 1
+}
+# (name, data) pairs; data is empty or a string holding the value. A name is a name, never an
+# identity (GitHub's SSH CA names an extension `login@github.com`); a value holding an `@` is judged.
+function sshopts(p, e, where,   len, s) {
+  while (p <= e) {
+    if (p + 3 > e) return 0
+    len = num(p, 4); p += 4; if (p + len - 1 > e) return 0
+    p += len
+    if (p + 3 > e) return 0
+    len = num(p, 4); p += 4; if (p + len - 1 > e) return 0
+    if (len >= 4 && num(p, 4) == len - 4) s = str(p + 4, p + len - 1)
+    else s = str(p, p + len - 1)
+    if (s ~ /@/) emit(s, where)
+    p += len
+  }
+  return 1
+}
+function sshkey(p, e, where,   len, t, q0, q1, s) {
+  if (!sshstrings(p, e, where)) return 0
+  len = num(p, 4); t = str(p + 4, p + 3 + len)
+  if (t !~ /^sk-/) return 1
+  while (p <= e) { len = num(p, 4); q0 = p + 4; q1 = p + 3 + len; p = q1 + 1 }
+  s = str(q0, q1); if (s ~ /@/) emit(s, where)
+  return 1
+}
+function sshcert(p, e, where,   len, t, n, k, q, q0) {
+  if (p + 3 > e) return 0
+  len = num(p, 4); if (p + 3 + len > e) return 0
+  t = str(p + 4, p + 3 + len); p += 4 + len
+  if (t ~ /^ssh-ed25519-cert/) n = 2
+  else if (t ~ /^sk-ssh-ed25519-cert/) n = 3
+  else if (t ~ /^ecdsa-sha2-[a-z0-9]+-cert/ || t ~ /^ssh-rsa-cert/) n = 3
+  else if (t ~ /^sk-ecdsa-sha2-[a-z0-9]+-cert/) n = 4
+  else if (t ~ /^ssh-dss-cert/) n = 5
+  else return 0
+  for (k = 1; k <= n; k++) {
+    q0 = p; p = sshfield(p, e); if (p < 0) return 0
+    if (k == n && t ~ /^sk-/) { q = str(q0 + 4, p - 1); if (q ~ /@/) emit(q, where) }
+  }
+  p += 12
+  if (p + 3 > e) return 0
+  len = num(p, 4); p += 4; if (p + len - 1 > e) return 0
+  if (len > 0) { q = str(p, p + len - 1); if (q ~ /@/) emit(q, where) }
+  p += len
+  if (p + 3 > e) return 0
+  len = num(p, 4); p += 4; if (p + len - 1 > e || !sshprincipals(p, p + len - 1, where)) return 0
+  p += len + 16
+  for (k = 1; k <= 2; k++) {
+    if (p + 3 > e) return 0
+    len = num(p, 4); p += 4; if (p + len - 1 > e || !sshopts(p, p + len - 1, where)) return 0
+    p += len
+  }
+  for (k = 1; k <= 3; k++) { p = sshfield(p, e); if (p < 0) return 0 }
+  return p == e + 1
+}
 function ssh(e, where,   p, i, len) {
   if (e < 10 || str(1, 6) != "SSHSIG") return 0
   p = 11
@@ -3713,28 +3868,39 @@ function ssh(e, where,   p, i, len) {
     len = num(p, 4); p += 4
     if (p + len - 1 > e) return 0
     if (i == 1) {
-      if (len >= 4 && num(p, 4) <= len - 4 && str(p + 4, p + 3 + num(p, 4)) ~ /-cert-/) runs(p, p + len - 1, where)
-      else if (!sshstrings(p, p + len - 1, where)) return 0
+      if (len >= 4 && num(p, 4) <= len - 4 && str(p + 4, p + 3 + num(p, 4)) ~ /-cert-/) { if (!sshcert(p, p + len - 1, where)) return 0 }
+      else if (!sshkey(p, p + len - 1, where)) return 0
     } else if (i < 5 && str(p, p + len - 1) ~ /@/) emit(str(p, p + len - 1), where)
     p += len
   }
   return p == e + 1
 }
-function armor(text, where, required,   L, nl, i, ty, body, found, ok, nb, hv) {
+# v27: each line is read as git reads it, a trailing `\r` and spaces dropped and a BEGIN line matched by
+# its prefix; a line after the checksum (`=…`) or after base64 padding makes it unreadable; in a `gpgsig` value (`required`) a line outside an armor block is judged too, and one
+# with no `@` makes the signature unreadable: the value is armor blocks and nothing else. Before a
+# tag's signature is its message, which the message pass reads.
+function armor(text, where, required,   L, nl, i, k, ty, body, found, ok, nb, hv, tail, bad) {
   nl = split(text, L, "\n"); found = 0
+  for (k = 1; k <= nl; k++) sub(/[ \t\r]+$/, "", L[k])
   for (i = 1; i <= nl; i++) {
-    if (L[i] !~ /^-----BEGIN (PGP SIGNATURE|PGP MESSAGE|SSH SIGNATURE|SIGNED MESSAGE)-----$/) continue
-    ty = substr(L[i], 12, length(L[i]) - 16); body = ""; ok = 0; found++
+    if (!match(L[i], /^-----BEGIN (PGP SIGNATURE|PGP MESSAGE|SSH SIGNATURE|SIGNED MESSAGE)-----/)) {
+      if (required && L[i] ~ /@/) emit(L[i], where)
+      else if (required && L[i] != "") unreadable(where)
+      continue
+    }
+    ty = substr(L[i], 12, RLENGTH - 16); body = ""; ok = 0; found++; tail = 0; bad = 0
     for (i++; i <= nl; i++) {
-      if (L[i] == "-----END " ty "-----") { ok = 1; break }
-      if (L[i] ~ "^[A-Za-z0-9+/=]+$") body = body L[i] "\n"
+      if (index(L[i], "-----END " ty "-----") == 1) { ok = 1; break }
+      if (L[i] ~ /^=/) { if (tail == 2) bad = 1; tail = 2 }
+      else if (tail && L[i] != "") bad = 1
+      else if (L[i] ~ "^[A-Za-z0-9+/=]+$") { body = body L[i] "\n"; if (L[i] ~ /=/) tail = 1 }
       else if (L[i] ~ /@/) { hv = L[i]; sub(/^[^:]*:[ ]*/, "", hv); emit(hv, where) }
     }
-    nb = ok ? decode(body) : -1
+    nb = (ok && !bad) ? decode(body) : -1
     if (nb <= 0) { unreadable(where); continue }
     if (ty ~ /^PGP/) ok = pgp(1, nb, where)
     else if (ty == "SSH SIGNATURE") ok = ssh(nb, where)
-    else runs(1, nb, where)
+    else ok = (der(1, nb, where, 0) == nb + 1)
     if (!ok) unreadable(where)
   }
   if (required && !found) unreadable(where)
@@ -3755,7 +3921,7 @@ function object(text, otyp, osha, where, name, top,   L, nl, i, hn, hv, sp, body
       sub(/ [0-9]+ [-+][0-9][0-9][0-9][0-9]$/, "", hv); out(hv, where)
     } else if (hn == "gpgsig" || hn == "gpgsig-sha256") {
       armor(hv, "the signature of " where, 1)
-    } else if (hn !~ /^(tree|parent|object|type|tag|encoding)$/ && hv ~ /@/) {
+    } else if ((hn " " hv) ~ /@/ && !shaped(hn, hv)) {
       out(hn " <" hv ">", where)
     }
   }
@@ -3786,8 +3952,8 @@ gitleaks: ## secret scan over FULL HISTORY, what an image build sends, + the com
 	@# SHELL or .SHELLFLAGS from outside, a CURDIR on the command line, and at the top level a LUXLINT or
 	@# LUXLINT_IMAGE from outside (`GITLEAKS_IMAGE` cannot be set at all) are refused before any pass runs,
 	@# on the first line, a `+` line: make runs it under -t too, and under .ONESHELL the first line's
-	@# prefix is the recipe's. Stated limits: under `make check`, a variable that reached the environment
-	@# of a leg is the gate's stated limit, since a bare `export` in the makefile looks the same, and a
+	@# prefix is the recipe's. Under `make check`, a variable that reached the environment of a leg
+	@# is not told apart from the makefile's own, since a bare `export` in it looks the same, and a
 	@# MAKELEVEL from outside looks like a leg. `-o` and `-n` from outside never reach a recipe (the
 	@# emitted git hooks clear make's flags), and an untracked Makefile.local can say `.IGNORE`.
 	@# A shallow clone and a graft file each make git (and so every pass) read part of the history,
@@ -3916,7 +4082,7 @@ gitleaks: ## secret scan over FULL HISTORY, what an image build sends, + the com
 	@# refused. With no Dockerfile and no declared build, the untracked files git would add and the
 	@# files changed against HEAD (staged included) are read instead: one commit puts them in history.
 	@# What is sent is copied out and scanned by path, NULs stripped as the binary pass does. git reads
-	@# this checkout as the work tree, whatever `core.worktree` the repository sets. Stated limits: a
+	@# this checkout as the work tree, whatever `core.worktree` the repository sets. A
 	@# build no makefile recipe runs (a compose `build.context: .` for a nested Dockerfile, a script a
 	@# recipe calls, a sub-make's own arguments) is judged at its Dockerfile's directory, a gitignored
 	@# Dockerfile is not found, a `$(LUXLINT)` image with no make reads every undeclared
@@ -3993,20 +4159,39 @@ gitleaks: ## secret scan over FULL HISTORY, what an image build sends, + the com
 	@# included), and every address a header or a signature carries. An address in a name field, and an
 	@# identity line holding more than one `<` or `>`, is refused whatever the allowance says: the
 	@# allowance is anchored on the line's end, and git's formats read only the first `<...>`.
+	@# v27: one name holding an address passes, a name that is exactly its own address (`a@corp <a@corp>`,
+	@# byte for byte), and only when the allowance accepts that address: the shape a hosting platform's
+	@# commit tool writes, which discloses nothing the address does not. Any other address in a name
+	@# stays refused, including another allowed address, or the line's own in another case or with
+	@# anything around it.
+	@# v27: a branch, tag or notes NAME holding an `@` is an identity line too (`a ref named <refs/…>`),
+	@# and notes commits (`refs/notes/*`, which a push carries when the remote is set to) are read like
+	@# branches. Remote-tracking refs stay unread, as above.
+	@# v27: every control byte in an identity (a NUL in a decoded signer UID, a CR in a raw header) is
+	@# written as `?` before anything compares the list, and grep reads it as text (`-a`): one NUL made
+	@# GNU grep call the whole list a binary file, print only that, and find no identity at all.
 	@# Walks what THIS repo publishes (branches, tags, HEAD), NOT `--all`: a remote-tracking ref caches the
 	@# remote's state, which during a scrub is by definition the un-rewritten history you are about to
 	@# force-push over — `--all` refused the verified fix, and any `git fetch` re-armed it.
 	@$(if $(filter environment% command,$(origin GIT_IDENTITY_OK)),$(error REFUSING: GIT_IDENTITY_OK comes from the $(origin GIT_IDENTITY_OK), so the caller chose which authors pass the identity pass: set it in the makefile))set -e; $(GITLEAKS_HISTORY_ENV) unset GIT_INDEX_FILE; I="$$(mktemp)"; Y="$$(mktemp -d)"; trap 'trap "" HUP INT TERM; rm -rf "$$I" "$$Y"' EXIT; trap 'trap "" HUP INT TERM; exit 1' HUP INT TERM; \
-	for f in $(foreach f,$(MAKEFILE_LIST),'$(subst ','\'',$(f))'); do \
-	  if ! git -C "$$(dirname "$$f")" --work-tree=. ls-files --error-unmatch -- "$$(basename "$$f")" >/dev/null 2>&1 && ! grep -q "luxarch:gitleaks asset" "$$f" && grep -Eq '^[[:space:]]*((override|export)[[:space:]]+)*GIT_IDENTITY_OK[[:space:]]*[:?+!]*=' "$$f"; then \
-	    echo "REFUSING: $$f sets GIT_IDENTITY_OK and git does not track it, so this machine chose which authors pass the identity pass: set it in the committed makefile."; exit 1; \
-	  fi; \
-	done; \
-	git log --branches --tags HEAD --pretty='%an <%ae>%n%cn <%ce>' > "$$I"; \
+	if [ '$(subst ','\'',$(value GIT_IDENTITY_OK))' != '<214140984\+luxardolabs@users\.noreply\.github\.com>$$$$|<noreply@github\.com>$$$$' ]; then \
+	  top=$$(git rev-parse --show-toplevel) && top=$$(CDPATH= cd -P -- "$$top" && pwd -P) || exit 1; \
+	  rp() { readlink -f -- "$$1" 2>/dev/null || { [ ! -L "$$1" ] && d=$$(CDPATH= cd -P -- "$$(dirname -- "$$1")" 2>/dev/null && pwd -P) && printf '%s/%s\n' "$$d" "$$(basename -- "$$1")"; }; }; \
+	  for f in $(foreach f,$(MAKEFILE_LIST),'$(subst ','\'',$(f))'); do \
+	    r=; [ -f "$$f" ] && r=$$(rp "$$f") || r=; rel=$${r#"$$top"/}; \
+	    if [ -z "$$r" ] || [ "$$rel" = "$$r" ] || ! git -C "$$top" ls-files --error-unmatch -- "$$rel" >/dev/null 2>&1 \
+	      || [ "$$(git -C "$$top" hash-object -- "$$rel" 2>/dev/null)" != "$$(git -C "$$top" rev-parse -q --verify "HEAD:$$rel" 2>/dev/null)" ]; then \
+	      echo "REFUSING: GIT_IDENTITY_OK is not the block's own allowance, and make reads $$f, which is not a file this repository commits, unchanged from HEAD (untracked, edited, in another repository, or named with a space): the allowance is honoured only when every makefile make reads is committed here."; exit 1; \
+	    fi; \
+	  done; \
+	fi; \
+	git log --branches --tags --glob='refs/notes/*' HEAD --pretty='%an <%ae>%n%cn <%ce>' > "$$I"; \
 	git for-each-ref refs/tags --format='%(taggername) %(taggeremail)' | LC_ALL=C sed '/^ *$$/d' >> "$$I"; \
+	git for-each-ref refs/heads refs/tags refs/notes --format='%(refname)' > "$$Y/refs"; LC_ALL=C sed -n 's/^\(.*@.*\)$$/a ref named <\1>/p' "$$Y/refs" >> "$$I"; \
 	N=$$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n'); [ $${#N} -eq 32 ]; X="$$Y/objs"; $(gitleaks_objects) \
-	LC_ALL=C awk -v n="$$N" -v mode=id "$$GITLEAKS_OBJECTS_AWK" "$$X.c" > "$$Y/where"; LC_ALL=C cut -f1 "$$Y/where" >> "$$I"; \
-	bad=$$({ LC_ALL=C grep -vE '$(GIT_IDENTITY_OK)' "$$I" || true; LC_ALL=C grep -E '^[^<]*@[^<]*<' "$$I" || true; LC_ALL=C grep -vE '^[^<>]* <[^<>]*>$$' "$$I" || true; } | LC_ALL=C sort -u); \
+	LC_ALL=C awk -v n="$$N" -v mode=id "$$GITLEAKS_OBJECTS_AWK" "$$X.c" > "$$Y/w0"; LC_ALL=C tr '\000-\010\013-\037\177' '?' < "$$Y/w0" > "$$Y/where"; LC_ALL=C cut -f1 "$$Y/where" >> "$$I"; \
+	LC_ALL=C tr '\000-\011\013-\037\177' '?' < "$$I" > "$$Y/ids"; cat "$$Y/ids" > "$$I"; \
+	bad=$$({ LC_ALL=C grep -avE '$(GIT_IDENTITY_OK)' "$$I" || true; LC_ALL=C awk '/^[^<]*@[^<]*</ { i = index($$0, " <"); if (i > 1 && substr($$0, length($$0)) == ">" && substr($$0, 1, i - 1) == substr($$0, i + 2, length($$0) - i - 2)) next; print }' "$$I" || true; LC_ALL=C grep -avE '^[^<>]* <[^<>]*>$$' "$$I" || true; } | LC_ALL=C sort -u); \
 	if [ -n "$$bad" ]; then \
 	  echo "REFUSING: a non-fleet identity appears in commit or tag METADATA (author/committer/tagger/signer):"; \
 	  echo "$$bad" | LC_ALL=C sed 's/^/    /'; \
@@ -4017,7 +4202,7 @@ gitleaks: ## secret scan over FULL HISTORY, what an image build sends, + the com
 	  echo "gitleaks cannot see this — it scans diffs, not commit headers, so it reported no leaks."; \
 	  echo "An address here is attached to every affected commit forever, not to one line of one file."; \
 	  echo "Scrub per FLEET-ONBOARDING-STANDARD §2: mirror backup -> git filter-repo -> re-verify with"; \
-	  echo "  git log --branches --tags HEAD --pretty='%an <%ae>%n%cn <%ce>' | sort -u"; \
+	  echo "  git log --branches --tags --glob='refs/notes/*' HEAD --pretty='%an <%ae>%n%cn <%ce>' | sort -u"; \
 	  echo "-> ask the OWNER to approve the force-push, then do it yourself. Never force-push unapproved."; \
 	  exit 1; \
 	fi
