@@ -112,9 +112,6 @@ PROD_NODE ?=
 PROD_USER ?= root
 PROD_DIR  ?= /opt/kidde-collector
 PROD_SSH  := ssh -o BatchMode=yes $(PROD_USER)@$(PROD_NODE)
-# The node's compose call names its directory and files outright, so it reads the same from any
-# working directory.
-PROD_NODE_DC := $(DC) --project-directory $(PROD_DIR) -f $(PROD_DIR)/compose.yml --env-file $(PROD_DIR)/.env.prod
 
 .PHONY: help version \
         build-local publish-sha release release-context-clean buildx-setup \
@@ -2259,17 +2256,17 @@ prod-sync: check-prod-node ## Push compose.yml + .env.prod to the node (repo is 
 	@printf "✓ synced config to $(PROD_NODE):$(PROD_DIR)\n"
 
 prod-deploy: check-prod-node ## Pull the pinned TAG + recreate the collector on the node (run release first)
-	$(PROD_SSH) '$(PROD_NODE_DC) pull && $(PROD_NODE_DC) up -d'
+	$(PROD_SSH) 'cd $(PROD_DIR) && $(PROD_DC) pull && $(PROD_DC) up -d'
 	@printf "✓ deployed to $(PROD_NODE)\n"
 
 prod-status: check-prod-node ## Container status on the node
-	$(PROD_SSH) '$(PROD_NODE_DC) ps'
+	$(PROD_SSH) 'cd $(PROD_DIR) && $(PROD_DC) ps'
 
 prod-logs-remote: check-prod-node ## Follow collector logs on the node
-	$(PROD_SSH) '$(PROD_NODE_DC) logs --tail=100 -f'
+	$(PROD_SSH) 'cd $(PROD_DIR) && $(PROD_DC) logs --tail=100 -f'
 
 prod-health: check-prod-node ## Run the in-container health check on the node
-	$(PROD_SSH) '$(PROD_NODE_DC) exec -T kidde-collector python3 -m app.health.check'
+	$(PROD_SSH) 'cd $(PROD_DIR) && $(PROD_DC) exec -T kidde-collector python3 -m app.health.check'
 
 prod-rollback: check-prod-node ## List image tags cached on the node for rollback
 	$(PROD_SSH) 'docker images $(REGISTRY)/$(IMAGE_NAME) --format "table {{.Tag}}\t{{.CreatedAt}}"'
